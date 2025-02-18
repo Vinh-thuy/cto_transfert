@@ -1,5 +1,14 @@
 import os
-from whoosh.index import create_in
+import sys
+import importlib.util
+
+# Débogage des imports
+print("Python Path:", sys.path)
+spec = importlib.util.find_spec("whoosh")
+print("Whoosh location:", spec.origin if spec else "Not found")
+
+# Importer explicitement les modules
+from whoosh import index
 from whoosh.fields import Schema, TEXT, ID
 from whoosh.qparser import QueryParser, FuzzyTermPlugin
 
@@ -15,7 +24,7 @@ schema = Schema(
 )
 
 # Créer l'index
-ix = create_in(INDEX_DIR, schema)
+ix = index.create_in(INDEX_DIR, schema)
 
 # Ajouter des produits à l'index
 writer = ix.writer()
