@@ -1,0 +1,11 @@
+agno
+openai
+duckduckgo-search
+yfinance
+fastapi==0.109.2
+uvicorn==0.27.0.post1
+websockets==12.0
+panel==1.3.8
+openai==1.12.0
+python-dotenv==1.0.1
+httpx==0.26.0

@@ -1,4 +1,3 @@
-
 # 2️⃣ 🎯 Objectif : Adapter le code pour un chatbot
 
 # Nous devons modifier pre_hook pour que :
@@ -112,3 +111,113 @@ layout.show()
 # 	1.	📡 Écoute WebSockets (listen_for_requests()) pour les demandes de confirmation.
 # 	2.	📝 Affiche un message et deux boutons (Oui / Non).
 # 	3.	🖱️ Envoie la réponse au backend via WebSocket.
+
+
+
+import os
+import asyncio
+import json
+from typing import List, Dict
+
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv()
+
+# Configuration OpenAI
+import openai
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Modèle de message
+class Message(BaseModel):
+    role: str
+    content: str
+
+class ChatManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+        self.chat_history: List[Message] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+    async def generate_ai_response(self, messages: List[Message]) -> str:
+        try:
+            response = await openai.ChatCompletion.acreate(
+                model="gpt-3.5-turbo",
+                messages=[{"role": m.role, "content": m.content} for m in messages]
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"Erreur : {str(e)}"
+
+# Initialisation de l'application
+app = FastAPI()
+
+# Configuration CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Gestionnaire de chat
+chat_manager = ChatManager()
+
+# Endpoints REST
+@app.post("/chat/history")
+async def get_chat_history() -> List[Dict]:
+    return [{"role": msg.role, "content": msg.content} for msg in chat_manager.chat_history]
+
+@app.post("/chat/clear")
+async def clear_chat_history():
+    chat_manager.chat_history.clear()
+    return {"status": "Chat history cleared"}
+
+# Endpoint WebSocket
+@app.websocket("/ws/chat")
+async def websocket_endpoint(websocket: WebSocket):
+    await chat_manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message = Message(role="user", content=data)
+            
+            # Ajouter le message de l'utilisateur à l'historique
+            chat_manager.chat_history.append(message)
+            
+            # Générer une réponse IA
+            ai_response_content = await chat_manager.generate_ai_response(chat_manager.chat_history)
+            ai_response = Message(role="assistant", content=ai_response_content)
+            
+            # Ajouter la réponse IA à l'historique
+            chat_manager.chat_history.append(ai_response)
+            
+            # Envoyer la réponse à l'utilisateur
+            await chat_manager.send_personal_message(ai_response_content, websocket)
+    
+    except WebSocketDisconnect:
+        chat_manager.disconnect(websocket)
+        await chat_manager.broadcast(f"Client disconnected")
+
+# Lancement du serveur
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
