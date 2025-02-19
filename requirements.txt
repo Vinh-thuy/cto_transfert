@@ -2,10 +2,21 @@ agno
 openai
 duckduckgo-search
 yfinance
+
+# WebSocket et API
+websockets==11.0.3
 fastapi==0.109.2
 uvicorn==0.27.0.post1
-websockets==12.0
-panel==1.3.8
-openai==1.12.0
-python-dotenv==1.0.1
+
+# Interface utilisateur
+panel==1.3.1
+holoviews==1.18.1
+bokeh==3.3.4
+
+# Autres dépendances
+pydantic==2.6.1
+asyncio==3.4.3
+
+# Développement et tests
+pytest==7.4.4
 httpx==0.26.0
