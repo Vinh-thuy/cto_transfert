@@ -1,0 +1,6 @@
+flask
+flask-restx
+vllm
+torch
+transformers
+huggingface_hub
