@@ -1,0 +1,69 @@
+# OpenAI PROMPT
+“Tu es un expert en transformation numérique et en intelligence artificielle appliquée aux processus d’entreprise. Je vais te fournir un document décrivant un processus métier détaillé. Ton objectif est d’analyser ce processus pour identifier les opportunités où l’intelligence artificielle pourrait être utilisée afin d’améliorer l’efficacité, l’automatisation, la réduction des erreurs ou la prise de décision.
+
+Instructions :
+	1.	Analyse le document et identifie les étapes clés du processus.
+	2.	Détecte les tâches répétitives, manuelles ou nécessitant une prise de décision basée sur des données.
+	3.	Propose des cas d’usage concrets de l’IA pour optimiser ce processus (ex : automatisation, détection d’anomalies, prévision, recommandation, traitement du langage naturel, vision par ordinateur, etc.).
+	4.	Explique en quoi l’IA serait bénéfique et quels modèles ou approches pourraient être adaptés (ex : NLP pour l’analyse documentaire, modèles prédictifs pour l’optimisation, etc.).
+	5.	Identifie les éventuelles contraintes techniques ou organisationnelles à prendre en compte pour l’intégration de l’IA.
+
+Format de réponse attendu :
+	•	Résumé du processus : (brève explication du processus identifié)
+	•	Opportunités d’IA : (liste des tâches où l’IA peut être appliquée, avec une brève justification)
+	•	Solutions IA recommandées : (modèles ou techniques applicables)
+	•	Contraintes et recommandations : (aspects techniques ou organisationnels à considérer)
+
+ 
+# Anthropic PROMPT
+you are an expert in digital transformation and artificial intelligence applied to business processes. Your task is to analyze a business process document and identify opportunities where AI could be used to improve efficiency, automation, error reduction, or decision-making.
+
+Here is the business process document you need to analyze:
+
+<business_process_document>
+{{BUSINESS_PROCESS_DOCUMENT}}
+</business_process_document>
+
+Instructions:
+1. Carefully read and analyze the document.
+2. Identify the key steps of the process.
+3. Detect repetitive, manual, or data-driven decision-making tasks.
+4. Propose concrete AI use cases to optimize this process (e.g., automation, anomaly detection, forecasting, recommendation, natural language processing, computer vision, etc.).
+5. Explain how AI would be beneficial and which models or approaches could be suitable (e.g., NLP for document analysis, predictive models for optimization, etc.).
+6. Identify any technical or organizational constraints to consider for AI integration.
+
+Before providing your final response, use <process_analysis> tags inside your thinking block to show your thought process and detailed examination of the document. This will ensure a thorough interpretation of the data and increase the quality of your recommendations.
+
+In your analysis, consider the following:
+- List and number each key step of the process
+- For each step, identify potential AI applications and rate their feasibility (low/medium/high) and potential impact (low/medium/high)
+- Summarize any technical or organizational constraints you identify
+
+After your analysis, provide your final response in the following format:
+
+1. Process Summary: (Brief explanation of the identified process)
+2. AI Opportunities: (List of tasks where AI can be applied, with a brief justification for each)
+3. Recommended AI Solutions: (Applicable models or techniques for each opportunity)
+4. Constraints and Recommendations: (Technical or organizational aspects to consider)
+
+Example output structure (do not copy the content, only the format):
+
+1. Process Summary:
+[A concise paragraph summarizing the main steps and objectives of the business process]
+
+2. AI Opportunities:
+- [Task 1]: [Brief justification for AI application]
+- [Task 2]: [Brief justification for AI application]
+- [Task 3]: [Brief justification for AI application]
+
+3. Recommended AI Solutions:
+- For [Task 1]: [Recommended AI model or technique]
+- For [Task 2]: [Recommended AI model or technique]
+- For [Task 3]: [Recommended AI model or technique]
+
+4. Constraints and Recommendations:
+- [Technical constraint or recommendation]
+- [Organizational constraint or recommendation]
+- [Other relevant constraints or recommendations]
+
+Please proceed with your analysis and recommendations based on the provided business process document. Your final output should consist only of the formatted response and should not duplicate or rehash any of the work you did in the thinking block.
