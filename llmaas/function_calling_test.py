@@ -1,5 +1,5 @@
-import requests
 import json
+from openai import OpenAI
 
 
 def additionner(a: float, b: float) -> float:
@@ -7,19 +7,17 @@ def additionner(a: float, b: float) -> float:
     return a + b
 
 
-def tester_function_calling(url_endpoint, api_key=None, model="gpt-3.5-turbo"):
+def tester_function_calling(api_key, base_url=None, model="gpt-3.5-turbo"):
     """
-    Cette fonction envoie une requête au LLM pour demander l'exécution d'un appel de fonction.
+    Cette fonction utilise le client OpenAI pour tester le function calling.
     L'objectif est de vérifier si l'endpoint supporte la fonctionnalité de function calling.
-    Compatible avec l'API OpenAI.
     """
-    # Préparation du payload pour activer le function calling (format OpenAI)
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "user", "content": "Calcule la somme de 2 et 3 en utilisant une fonction."}
-        ],
-        "tools": [
+    try:
+        # Initialisation du client OpenAI
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        
+        # Définition de la fonction à appeler
+        tools = [
             {
                 "type": "function",
                 "function": {
@@ -35,50 +33,30 @@ def tester_function_calling(url_endpoint, api_key=None, model="gpt-3.5-turbo"):
                     }
                 }
             }
-        ],
-        "tool_choice": "auto"  # Laisse le modèle décider s'il doit utiliser la fonction
-    }
-    
-    # Configuration des headers avec authentification si nécessaire
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    
-    # Envoi de la requête POST à l'endpoint
-    try:
-        response = requests.post(url_endpoint, data=json.dumps(payload), headers=headers, timeout=10)
-    except requests.exceptions.RequestException as e:
-        print("Erreur lors de l'envoi de la requête :", e)
-        return False
-
-    if response.status_code != 200:
-        print("Erreur HTTP", response.status_code, response.text)
-        return False
-
-    try:
-        resultat = response.json()
-    except json.JSONDecodeError:
-        print("La réponse n'est pas au format JSON :", response.text)
-        return False
-
-    # Vérification de la présence d'un appel de fonction dans la réponse (format OpenAI)
-    if "choices" in resultat and len(resultat["choices"]) > 0:
-        choice = resultat["choices"][0]
-        if "message" in choice and "tool_calls" in choice["message"]:
-            tool_calls = choice["message"]["tool_calls"]
+        ]
+        
+        # Envoi de la requête via le client OpenAI
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Calcule la somme de 2 et 3 en utilisant une fonction."}
+            ],
+            tools=tools,
+            tool_choice="auto"
+        )
+        
+        # Analyse de la réponse
+        message = response.choices[0].message
+        
+        # Vérification de la présence d'un appel de fonction
+        if message.tool_calls:
+            tool_call = message.tool_calls[0]
             
-            # Vérifie s'il y a au moins un appel de fonction
-            if len(tool_calls) > 0 and tool_calls[0]["type"] == "function":
-                function_call = tool_calls[0]["function"]
-                
-                # Validation du nom de fonction
-                if function_call.get("name") != "additionner":
-                    print("Erreur : Mauvaise fonction appelée")
-                    return False
-                
-                # Validation des paramètres
+            # Vérification du type et du nom de la fonction
+            if tool_call.type == "function" and tool_call.function.name == "additionner":
+                # Extraction et validation des paramètres
                 try:
-                    params = json.loads(function_call.get("arguments", "{}"))
+                    params = json.loads(tool_call.function.arguments)
                     if not all(k in params for k in ("a", "b")):
                         print("Erreur : Paramètres manquants")
                         return False
@@ -94,21 +72,29 @@ def tester_function_calling(url_endpoint, api_key=None, model="gpt-3.5-turbo"):
                 except json.JSONDecodeError:
                     print("Arguments de fonction invalides")
                     return False
-    
-    print("La réponse ne contient pas de données de function calling.")
-    return False
+            else:
+                print(f"Mauvaise fonction appelée : {tool_call.function.name}")
+                return False
+        else:
+            print("La réponse ne contient pas d'appel de fonction")
+            return False
+            
+    except Exception as e:
+        print(f"Erreur lors de l'appel au client OpenAI : {e}")
+        return False
 
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2:
-        print("Usage: python attack_endpoint.py <endpoint_url> [api_key]")
+        print("Usage: python attack_endpoint.py <api_key> [base_url] [model]")
         sys.exit(1)
     
-    endpoint_url = sys.argv[1]
-    api_key = sys.argv[2] if len(sys.argv) > 2 else None
+    api_key = sys.argv[1]
+    base_url = sys.argv[2] if len(sys.argv) > 2 else None
+    model = sys.argv[3] if len(sys.argv) > 3 else "gpt-3.5-turbo"
     
-    if tester_function_calling(endpoint_url, api_key):
+    if tester_function_calling(api_key, base_url, model):
         print("[SUCCESS] Function calling opérationnel")
     else:
         print("[FAIL] Problème détecté")
