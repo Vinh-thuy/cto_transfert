@@ -4,8 +4,12 @@ import numpy as np
 from textwrap import dedent
 from typing import List, Dict, Any
 
+from openai import OpenAI
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
+
+# Initialisation du client OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Initialisation des données de base
 INDICATEURS_PILOTAGE = {
@@ -40,30 +44,43 @@ QUESTIONS_STRATEGIQUES = pd.DataFrame({
     ]
 })
 
+def get_indicateur_definition(indicateur: str) -> str:
+    """Récupère la définition d'un indicateur"""
+    return INDICATEURS_PILOTAGE.get(indicateur, "Indicateur non référencé")
+
 def analyse_similitude_question(question_utilisateur: str) -> List[Dict[str, Any]]:
     """
     Analyse la similitude entre la question de l'utilisateur et les questions stratégiques
     """
-    model = OpenAIChat(id="gpt-4o-mini")
-    
     resultats = []
     for index, row in QUESTIONS_STRATEGIQUES.iterrows():
         # Analyse sémantique avec GPT
-        prompt = f"""
-        Compare ces deux phrases et donne un score de similitude de 0 à 1 :
-        Question 1: {question_utilisateur}
-        Question 2: {row['question']}
-        
-        Critères d'évaluation :
-        - Thématique générale
-        - Intention stratégique
-        - Mots-clés communs
-        
-        Réponds uniquement avec un nombre entre 0 et 1.
-        """
+        messages = [
+            {"role": "system", "content": "Tu es un assistant qui évalue la similitude sémantique entre deux phrases."},
+            {"role": "user", "content": f"""
+            Compare ces deux phrases et donne un score de similitude de 0 à 1 :
+            Question 1: {question_utilisateur}
+            Question 2: {row['question']}
+            
+            Critères d'évaluation :
+            - Thématique générale
+            - Intention stratégique
+            - Mots-clés communs
+            
+            Réponds uniquement avec un nombre entre 0 et 1.
+            """}
+        ]
         
         try:
-            score = float(model.generate(prompt).strip())
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_tokens=10
+            )
+            
+            score_str = response.choices[0].message.content.strip()
+            score = float(score_str)
+            
             if score > 0.5:  # Seuil de similitude
                 resultats.append({
                     'question': row['question'],
@@ -76,10 +93,6 @@ def analyse_similitude_question(question_utilisateur: str) -> List[Dict[str, Any
     # Trier par score décroissant
     return sorted(resultats, key=lambda x: x['score'], reverse=True)
 
-def get_indicateur_definition(indicateur: str) -> str:
-    """Récupère la définition d'un indicateur"""
-    return INDICATEURS_PILOTAGE.get(indicateur, "Indicateur non référencé")
-
 def router_question(question: str) -> str:
     """Détermine l'agent cible en fonction de la question"""
     return "indicateurs" if any(ind.lower() in question.lower() for ind in INDICATEURS_PILOTAGE.keys()) else "strategique"
@@ -88,7 +101,11 @@ def router_question(question: str) -> str:
 indicateurs_agent = Agent(
     name="Agent Indicateurs",
     role="Fournir des définitions précises sur les indicateurs de pilotage",
-    model=OpenAIChat(id="gpt-4o-mini"),
+    model=OpenAIChat(
+        model="gpt-4o-mini",
+        temperature=0.3,  # Température basse pour des réponses plus déterministes
+        max_tokens=500  # Limiter la longueur des réponses
+    ),
     instructions=[
         "Répondre de manière précise et concise",
         "Utiliser un langage clair et professionnel",
@@ -111,7 +128,11 @@ indicateurs_agent = Agent(
 strategique_agent = Agent(
     name="Agent Stratégique",
     role="Analyser et proposer des perspectives stratégiques",
-    model=OpenAIChat(id="gpt-4o-mini"),
+    model=OpenAIChat(
+        model="gpt-4o-mini",
+        temperature=0.3,  # Température basse pour des réponses plus déterministes
+        max_tokens=500  # Limiter la longueur des réponses
+    ),
     instructions=[
         "Identifier les questions stratégiques pertinentes",
         "Fournir une analyse approfondie",
@@ -135,7 +156,11 @@ strategique_agent = Agent(
 routeur_agent = Agent(
     name="Agent Routeur",
     role="Orienter la question vers l'agent approprié",
-    model=OpenAIChat(id="gpt-4o-mini"),
+    model=OpenAIChat(
+        model="gpt-4o-mini",
+        temperature=0.3,  # Température basse pour des réponses plus déterministes
+        max_tokens=500  # Limiter la longueur des réponses
+    ),
     instructions=[
         "Déterminer la nature de la question",
         "Choisir l'agent le plus adapté"
@@ -155,8 +180,11 @@ routeur_agent = Agent(
 strategic_editor = Agent(
     name="Éditeur Stratégique",
     team=[indicateurs_agent, strategique_agent, routeur_agent],
-    description="Coordonne l'analyse des questions stratégiques et des indicateurs",
-    model=OpenAIChat(id="gpt-4o-mini"),
+    model=OpenAIChat(
+        model="gpt-4o-mini",
+        temperature=0.3,  # Température basse pour des réponses plus déterministes
+        max_tokens=500  # Limiter la longueur des réponses
+    ),
     instructions=[
         "Utiliser l'agent routeur pour orienter précisément les questions",
         "Collaborer avec les agents pour fournir les meilleures informations",
