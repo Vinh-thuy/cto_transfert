@@ -11,7 +11,7 @@ import urllib.parse
 # Configuration WebSocket
 WEBSOCKET_CONFIG = {
     'host': os.getenv('WEBSOCKET_HOST', 'localhost'),  
-    'port': int(os.getenv('WEBSOCKET_PORT', 8003)),       # Mise à jour du port pour correspondre au nouveau serveur
+    'port': int(os.getenv('WEBSOCKET_PORT', 8000)),       # Mise à jour du port pour correspondre au nouveau serveur
     'path': '/v1/agents/langgraph/ws'  # Chemin complet pour l'agent LangGraph
 }
 

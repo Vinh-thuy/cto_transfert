@@ -1,22 +1,18 @@
 agno
 openai
-duckduckgo-search
-yfinance
-
-# WebSocket et API
-websockets==11.0.3
-fastapi==0.109.2
-uvicorn==0.27.0.post1
-
-# Interface utilisateur
+langchain_openai
+langchain_core
+dotenv
+pydantic==2.6.1
+starlette
+pydantic_settings
 panel==1.3.1
 holoviews==1.18.1
 bokeh==3.3.4
-
-# Autres dépendances
-pydantic==2.6.1
+websockets==11.0.3
+fastapi==0.109.2
+uvicorn==0.27.0.post1
 asyncio==3.4.3
-
-# Développement et tests
 pytest==7.4.4
 httpx==0.26.0
+langgraph
