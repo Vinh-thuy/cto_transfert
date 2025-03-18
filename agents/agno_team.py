@@ -3,16 +3,9 @@ import pandas as pd
 import numpy as np
 from textwrap import dedent
 from typing import List, Dict, Any
-from pathlib import Path
 
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
-from agno.tools.file import FileTools
-
-# Fichier temporaire pour stocker les données
-temp_dir = Path(__file__).parent.joinpath("tmp")
-temp_dir.mkdir(parents=True, exist_ok=True)
-questions_file = temp_dir.joinpath("strategic_questions.md")
 
 # Initialisation des données de base
 INDICATEURS_PILOTAGE = {
@@ -50,12 +43,6 @@ QUESTIONS_STRATEGIQUES = pd.DataFrame({
 def analyse_similitude_question(question_utilisateur: str) -> List[Dict[str, Any]]:
     """
     Analyse la similitude entre la question de l'utilisateur et les questions stratégiques
-    
-    Args:
-        question_utilisateur (str): Question posée par l'utilisateur
-    
-    Returns:
-        List[Dict[str, Any]]: Liste des questions similaires avec leur score de similitude
     """
     model = OpenAIChat(id="gpt-4o-mini")
     
@@ -89,16 +76,25 @@ def analyse_similitude_question(question_utilisateur: str) -> List[Dict[str, Any
     # Trier par score décroissant
     return sorted(resultats, key=lambda x: x['score'], reverse=True)
 
+def get_indicateur_definition(indicateur: str) -> str:
+    """Récupère la définition d'un indicateur"""
+    return INDICATEURS_PILOTAGE.get(indicateur, "Indicateur non référencé")
+
+def router_question(question: str) -> str:
+    """Détermine l'agent cible en fonction de la question"""
+    return "indicateurs" if any(ind.lower() in question.lower() for ind in INDICATEURS_PILOTAGE.keys()) else "strategique"
+
 # Agent Indicateurs
 indicateurs_agent = Agent(
     name="Agent Indicateurs",
     role="Fournir des définitions précises sur les indicateurs de pilotage",
+    model=OpenAIChat(id="gpt-4o-mini"),
     instructions=[
         "Répondre de manière précise et concise",
         "Utiliser un langage clair et professionnel",
         "Si l'indicateur n'est pas connu, le signaler explicitement"
     ],
-    tools=[FileTools(base_dir=temp_dir)],
+    tools=[get_indicateur_definition],
     expected_output=dedent("""\
     ## {indicateur}
 
@@ -115,12 +111,13 @@ indicateurs_agent = Agent(
 strategique_agent = Agent(
     name="Agent Stratégique",
     role="Analyser et proposer des perspectives stratégiques",
+    model=OpenAIChat(id="gpt-4o-mini"),
     instructions=[
         "Identifier les questions stratégiques pertinentes",
         "Fournir une analyse approfondie",
         "Proposer des pistes de réflexion concrètes"
     ],
-    tools=[FileTools(base_dir=temp_dir)],
+    tools=[analyse_similitude_question],
     expected_output=dedent("""\
     ## Analyse Stratégique
 
@@ -138,11 +135,12 @@ strategique_agent = Agent(
 routeur_agent = Agent(
     name="Agent Routeur",
     role="Orienter la question vers l'agent approprié",
+    model=OpenAIChat(id="gpt-4o-mini"),
     instructions=[
         "Déterminer la nature de la question",
         "Choisir l'agent le plus adapté"
     ],
-    tools=[FileTools(base_dir=temp_dir)],
+    tools=[router_question],
     expected_output=dedent("""\
     ## Orientation de la Question
 
@@ -158,6 +156,7 @@ strategic_editor = Agent(
     name="Éditeur Stratégique",
     team=[indicateurs_agent, strategique_agent, routeur_agent],
     description="Coordonne l'analyse des questions stratégiques et des indicateurs",
+    model=OpenAIChat(id="gpt-4o-mini"),
     instructions=[
         "Utiliser l'agent routeur pour orienter précisément les questions",
         "Collaborer avec les agents pour fournir les meilleures informations",
