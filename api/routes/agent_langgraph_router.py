@@ -4,6 +4,9 @@ import logging
 from pydantic import BaseModel
 from agents.LangGraph_agent import router_workflow  # Import absolu depuis la racine
 
+# Stockage des états de conversation pour chaque utilisateur
+user_states = {}
+
 # Configuration des logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -76,17 +79,134 @@ async def websocket_langgraph(websocket: WebSocket):
                         workflow_input = {'input': 'Bonjour'}
                         logging.warning(f"Aucun format reconnu, utilisation de la valeur par défaut: {workflow_input}")
                 
-                logging.info(f"Appel de router_workflow.invoke avec {workflow_input}")
+                # Extraire l'ID utilisateur pour la gestion des sessions
+                user_id = input_data.get('user_id', websocket.query_params.get('user_id', 'anonymous'))
+                
+                # Vérifier si l'utilisateur a un état en attente de validation
+                awaiting_validation = user_id in user_states and user_states[user_id].get('awaiting_validation', False)
+                
+                # Variable pour suivre si nous avons une réponse de validation
+                user_approval = None
+                
+                # Si nous attendons une validation, vérifier si cette entrée est une réponse de validation
+                if awaiting_validation:
+                    logging.info(f"Utilisateur {user_id} en attente de validation. Vérification de la réponse...")
+                    
+                    # Vérifier si la réponse est explicitement marquée comme validation
+                    if 'user_approval' in input_data:
+                        user_approval = input_data['user_approval']
+                    # Ensuite, vérifier si la réponse est dans le champ 'response'
+                    elif 'response' in input_data:
+                        # Traiter les réponses textuelles comme oui/non
+                        response_text = input_data.get('response', '').lower().strip()
+                        if response_text in ['oui', 'yes', 'y', 'ok', 'continue', 'continuer']:
+                            user_approval = True
+                        elif response_text in ['non', 'no', 'n', 'cancel', 'annuler']:
+                            user_approval = False
+                    # Enfin, vérifier si l'input_data lui-même est une réponse oui/non
+                    elif isinstance(input_data.get('input_data'), str):
+                        response_text = input_data.get('input_data', '').lower().strip()
+                        if response_text in ['oui', 'yes', 'y', 'ok', 'continue', 'continuer']:
+                            user_approval = True
+                            logging.info(f"Détection d'une réponse positive: {response_text}")
+                        elif response_text in ['non', 'no', 'n', 'cancel', 'annuler']:
+                            user_approval = False
+                            logging.info(f"Détection d'une réponse négative: {response_text}")
+                
+                # Configuration pour identifier la session
+                config = {"configurable": {"thread_id": f"user-{user_id}"}}
+                
+                # Préparer l'entrée pour le workflow
                 try:
-                    state = router_workflow.invoke(workflow_input)
+                    # Initialiser workflow_input avec une valeur par défaut
+                    workflow_input = {'input': ''}
+                    
+                    # Si nous avons une réponse de validation et que l'utilisateur est en attente de validation
+                    if awaiting_validation and user_approval is not None:
+                        # Récupérer l'entrée originale et la décision qui ont déclenché la demande de validation
+                        original_input = user_states[user_id].get('original_input', 'tell me a story')
+                        original_decision = user_states[user_id].get('original_decision', 'story')
+                        
+                        logging.info(f"Utilisation de l'entrée originale: {original_input} avec décision: {original_decision}")
+                        
+                        # IMPORTANT: Pour les réponses de validation, nous ne voulons pas que le routeur LLM interprète
+                        # la réponse 'oui'/'non', mais plutôt utiliser directement l'état précédent avec la décision originale
+                        # et l'approbation utilisateur
+                        
+                        # Créer un état spécial qui sera traité directement par check_user_approval
+                        # IMPORTANT: Pour le cas 'story', nous forçons la décision à 'story' pour éviter tout problème de routage
+                        workflow_input = {
+                            # Nous utilisons l'entrée originale pour conserver le contexte
+                            'input': original_input,
+                            'user_approval': user_approval,
+                            'decision': 'story' if original_decision == 'story' else original_decision,
+                            # Ajouter un flag spécial pour contourner le routeur LLM
+                            'bypass_router': True,
+                            # Ajouter un flag pour indiquer que c'est une réponse de validation
+                            'is_validation_response': True
+                        }
+                        
+                        # Journalisation détaillée
+                        logging.info(f"Réponse de validation détectée: {user_approval}")
+                        logging.info(f"Décision originale: {original_decision}")
+                        
+                        # Réinitialiser l'état d'attente
+                        user_states[user_id]['awaiting_validation'] = False
+                        
+                        # Contourner le routage normal pour cette réponse de validation
+                        logging.info("Contournement du routage normal pour la réponse de validation")
+                        logging.info(f"Préparation de l'input pour continuer le flux: {workflow_input}")
+                    elif awaiting_validation:
+                        # Si nous attendons une validation mais que la réponse n'est pas reconnue
+                        logging.info("Réponse non reconnue comme validation")
+                        if isinstance(input_data.get('input_data'), str):
+                            original_input = input_data.get('input_data')
+                            # Sauvegarder l'entrée originale pour une utilisation ultérieure
+                            user_states[user_id]['original_input'] = original_input
+                            # Réinitialiser l'état d'attente car l'utilisateur a envoyé une nouvelle requête
+                            user_states[user_id]['awaiting_validation'] = False
+                            workflow_input = {'input': original_input}
+                    else:
+                        # Si nous n'attendons pas de validation, traiter comme une nouvelle requête
+                        if isinstance(input_data.get('input_data'), str):
+                            original_input = input_data.get('input_data')
+                            # Sauvegarder l'entrée originale pour une utilisation ultérieure
+                            if user_id not in user_states:
+                                user_states[user_id] = {}
+                            user_states[user_id]['original_input'] = original_input
+                            workflow_input = {'input': original_input}
+                    
+                    # Invoquer le workflow avec la configuration de session
+                    logging.info(f"Appel de router_workflow.invoke avec {workflow_input} (config: {config})")
+                    state = router_workflow.invoke(workflow_input, config=config)
                     logging.info(f"Résultat obtenu: {state}")
                     
                     if "output" not in state:
                         logging.error(f"Clé 'output' manquante dans l'état: {state}")
                         response = {"error": "Erreur interne: format de réponse invalide", "details": str(state)}
                     else:
-                        # Format de réponse cohérent avec l'API REST
-                        response = {"result": state["output"]}
+                        # Vérifier si nous sommes dans un état qui nécessite une validation
+                        if "requires_validation" in state and state["requires_validation"] is True:
+                            # Marquer l'utilisateur comme en attente de validation
+                            if user_id not in user_states:
+                                user_states[user_id] = {}
+                            user_states[user_id]['awaiting_validation'] = True
+                            
+                            # Stocker la décision originale pour la réutiliser après validation
+                            if "decision" in state:
+                                user_states[user_id]['original_decision'] = state["decision"]
+                                logging.info(f"Décision originale stockée: {state['decision']}")
+                            
+                            # Format de réponse pour l'interruption
+                            response = {
+                                "result": state["output"],
+                                "waiting_for_approval": True,
+                                "message": "Veuillez confirmer pour continuer"
+                            }
+                            logging.info("Interruption détectée, attente de validation utilisateur")
+                        else:
+                            # Format de réponse standard
+                            response = {"result": state["output"]}
                     
                     logging.info(f"Envoi de la réponse: {response}")
                     json_response = json.dumps(response)

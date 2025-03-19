@@ -3,6 +3,7 @@ from typing_extensions import Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint import Checkpoint
 from langchain_core.tools import tool
 
 from dotenv import load_dotenv
@@ -94,18 +95,17 @@ def user_interrupt(state: State):
     # Extraire le thème principal de l'entrée
     theme = state['input'].split()[-1] if len(state['input'].split()) > 0 else "mystère"
     
-    # Message pour l'utilisateur avec instructions claires
-    message = f"VALIDATION_REQUISE: Je vais générer une histoire sur le thème '{theme}'. Souhaitez-vous continuer avec cette action ? Répondez par 'oui' pour continuer ou 'non' pour annuler."
+    # Message pour l'utilisateur
+    message = f"Je vais générer une histoire sur le thème '{theme}'. Souhaitez-vous continuer avec cette action ?"
     
-    # Dans un système réel, nous ne définissons pas user_approval ici
-    # Il sera fourni par l'utilisateur lors d'une interaction ultérieure
+    # Simuler une réponse utilisateur (dans un vrai système, cela serait interactif)
+    # Pour les besoins de la démonstration, nous supposons que l'utilisateur approuve
+    user_approval = True  # Dans un système réel, cela viendrait d'une entrée utilisateur
     
-    logging.info("En attente de la validation utilisateur...")
-    logging.info("=== Interruption pour validation utilisateur ===")
+    logging.info(f"Validation utilisateur: {user_approval}")
+    logging.info("=== Fin de la demande de validation utilisateur ===")
     
-    # Retourner l'output avec un message clair indiquant qu'une validation est requise
-    # Le client devra détecter ce préfixe pour savoir qu'une validation est nécessaire
-    return {"output": message, "requires_validation": True}
+    return {"user_approval": user_approval, "output": message}
 
 
 def llm_call_1(state: State):
@@ -178,39 +178,6 @@ Your response must be a single word: story, joke, or chatbot.
 
 def llm_call_router(state: State):
     """Route the input to the appropriate node"""
-    # Vérifier si l'entrée est une simple réponse 'oui'/'non' à une demande de validation
-    input_text = state.get("input", "").lower().strip()
-    if input_text in ['oui', 'yes', 'y', 'ok', 'continue', 'continuer', 'non', 'no', 'n', 'cancel', 'annuler']:
-        logging.info(f"=== Détection d'une simple réponse de validation: '{input_text}' ===")
-        
-        # Pour une réponse positive, forcer la décision à 'story' sans appeler le LLM
-        if input_text in ['oui', 'yes', 'y', 'ok', 'continue', 'continuer']:
-            logging.info("=== Réponse POSITIVE détectée, forçage de la décision à 'story' ===")
-            return {"decision": "story", "user_approval": True, "is_validation_response": True}
-        else:
-            # Pour une réponse négative, on peut garder la logique habituelle
-            logging.info("=== Réponse NÉGATIVE détectée ===")
-    
-    # Vérifier si nous devons contourner le routeur (pour les réponses de validation)
-    if state.get("bypass_router", False):
-        logging.info("=== Contournement du routage LLM détecté ===")
-        logging.info(f"Conservation de la décision existante: '{state.get('decision', 'story')}'")
-        # Retourner l'état tel quel, sans appeler le LLM
-        return state
-    
-    # Ancienne vérification pour la rétrocompatibilité
-    if state.get("is_validation_response", False):
-        logging.info("=== Contournement du routage pour une réponse de validation (ancien flag) ===")
-        logging.info(f"Conservation de la décision existante: '{state.get('decision', 'story')}'")
-        return {"decision": state.get("decision", "story")}
-    
-    # Si l'entrée est vide, conserver la décision existante (pour les réponses de validation)
-    if not state.get("input", "").strip():
-        logging.info("=== Entrée vide détectée, contournement du routage ===")
-        logging.info(f"Conservation de la décision existante: '{state.get('decision', 'story')}'")
-        return state
-    
-    # Sinon, procéder au routage normal
     logging.info("=== Début du routage de l'entrée ===")
     logging.info(f"Entrée à router: '{state['input']}'")
     decision = router.invoke(
@@ -234,33 +201,8 @@ def llm_call_router(state: State):
 
 # Conditional edge function to route to the appropriate node
 def route_decision(state: State):
-    # Vérifier si c'est une réponse de validation
-    if state.get("is_validation_response", False) or state.get("bypass_router", False):
-        logging.info("=== Réponse de validation détectée dans route_decision ===")
-        logging.info(f"Décision: {state.get('decision', 'non spécifiée')}, Approbation: {state.get('user_approval', 'non spécifiée')}")
-        
-        # Si l'utilisateur a approuvé et que la décision est 'story', aller directement à llm_call_1
-        if state.get("user_approval", False) is True and state.get("decision", "") == "story":
-            logging.info("Validation POSITIVE pour 'story', routage direct vers llm_call_1")
-            return "llm_call_1"
-        # Si l'utilisateur a approuvé et que la décision est 'chatbot', aller directement à llm_call_3
-        elif state.get("user_approval", False) is True and state.get("decision", "") == "chatbot":
-            logging.info("Validation POSITIVE pour 'chatbot', routage direct vers llm_call_3")
-            return "llm_call_3"
-        # Si l'utilisateur n'a pas approuvé, terminer le flux
-        elif state.get("user_approval", False) is False:
-            logging.info("Validation NEGATIVE, fin du flux")
-            return END
-    
-    # Si l'utilisateur a déjà donné son approbation et que nous avons une décision 'story',
-    # aller directement au noeud llm_call_1 sans passer par l'interruption
-    if "user_approval" in state and state["user_approval"] is True and state["decision"] == "story":
-        logging.info("Approbation utilisateur déjà reçue, routage direct vers le noeud story (llm_call_1)")
-        return "llm_call_1"  # Aller directement au noeud story sans interruption
-    
-    # Sinon, suivre le flux normal
+    # Return the node name you want to visit next
     if state["decision"] == "story":
-        logging.info("Routage vers le nœud d'interruption utilisateur")
         return "user_interrupt"  # Rediriger vers l'interruption utilisateur avant llm_call_1
     elif state["decision"] == "joke":
         return "llm_call_2"
@@ -269,30 +211,22 @@ def route_decision(state: State):
 
 
 # Build workflow
-logging.info("Construction du graphe d'état...")
 router_builder = StateGraph(State)
 
 # Add nodes
-logging.info("Ajout des nœuds au graphe...")
-router_builder.add_node("llm_call_router", llm_call_router)
-router_builder.add_node("user_interrupt", user_interrupt)  # Nœud pour l'interruption utilisateur
+router_builder.add_node("user_interrupt", user_interrupt)  # Nouveau nœud pour l'interruption utilisateur
 router_builder.add_node("llm_call_1", llm_call_1)
 router_builder.add_node("llm_call_2", llm_call_2)
 router_builder.add_node("llm_call_3", llm_call_3)
+router_builder.add_node("llm_call_router", llm_call_router)
 
 # Add edges to connect nodes
-logging.info("Ajout des arêtes au graphe...")
-# Arête de départ vers le routeur
 router_builder.add_edge(START, "llm_call_router")
-
-# Arêtes conditionnelles depuis le routeur
-logging.info("Ajout des arêtes conditionnelles depuis le routeur...")
 router_builder.add_conditional_edges(
     "llm_call_router",
     route_decision,
     {  # Name returned by route_decision : Name of next node to visit
         "user_interrupt": "user_interrupt",  # Redirection vers le nœud d'interruption
-        "llm_call_1": "llm_call_1",  # Redirection directe vers le nœud story si approbation déjà donnée
         "llm_call_2": "llm_call_2",
         "llm_call_3": "llm_call_3",
     },
@@ -300,69 +234,57 @@ router_builder.add_conditional_edges(
 
 # Fonction conditionnelle pour décider si on continue après l'interruption
 def check_user_approval(state: State):
-    # Vérifier si la décision est spécifiée dans l'état
-    decision = state.get("decision", None)
-    
-    # Débogage: Afficher l'état complet pour comprendre ce qui est reçu
-    logging.info(f"check_user_approval - État reçu: {state}")
-    
-    # Si user_approval est présent et True, continuer vers le noeud approprié en fonction de la décision
-    if "user_approval" in state and state["user_approval"] is True:
-        logging.info(f"Validation utilisateur reçue (POSITIVE): Continuer vers le noeud approprié (décision: {decision})")
-        
-        # IMPORTANT: Forcer le routage vers llm_call_1 si la décision est 'story'
-        # indépendamment des autres facteurs
-        if decision == "story":
-            logging.info("Routage FORCÉ vers le noeud story (llm_call_1)")
-            return "llm_call_1"  # Noeud pour générer une histoire
-        elif decision == "chatbot":
-            logging.info("Routage vers le noeud chatbot (llm_call_3)")
-            return "llm_call_3"  # Noeud pour le chatbot
-        else:
-            # Par défaut, utiliser llm_call_1 si aucune décision spécifique n'est fournie
-            logging.info("Aucune décision spécifique, routage par défaut vers llm_call_1")
-            return "llm_call_1"
-    
-    # Si user_approval est présent et False, terminer le flux
-    elif "user_approval" in state and state["user_approval"] is False:
-        logging.info("Validation utilisateur reçue: Terminer le flux (refus)")
-        return END  # Terminer le flux si l'utilisateur n'approuve pas
-    
-    # Si user_approval n'est pas présent, terminer le flux avec un message d'attente
+    if state.get("user_approval", False):
+        return "llm_call_1"  # Continuer vers llm_call_1 si l'utilisateur approuve
     else:
-        logging.info("Validation utilisateur non reçue: Terminer avec message d'attente")
-        # Au lieu de boucler, nous terminons le flux et laissons le client gérer l'attente
-        return END
+        return END  # Terminer le flux si l'utilisateur n'approuve pas
 
 # Ajouter les arêtes conditionnelles pour le nœud d'interruption
-logging.info("Ajout des arêtes conditionnelles pour le nœud d'interruption...")
 router_builder.add_conditional_edges(
-    "user_interrupt",  # Noeud source
-    check_user_approval,  # Fonction de décision
+    "user_interrupt",
+    check_user_approval,
     {
-        # Mapping des valeurs de retour de check_user_approval vers les noeuds cibles
-        "llm_call_1": "llm_call_1",  # Si l'utilisateur approuve
-        "llm_call_3": "llm_call_3",  # Si l'utilisateur approuve pour le chatbot
-        END: END,  # Si l'utilisateur n'approuve pas ou en attente
+        "llm_call_1": "llm_call_1",
+        END: END
     }
 )
 
-# Ajouter les arêtes finales pour terminer les flux
-logging.info("Ajout des arêtes finales...")
 router_builder.add_edge("llm_call_1", END)
 router_builder.add_edge("llm_call_2", END)
 router_builder.add_edge("llm_call_3", END)
 
 # Compile workflow
-logging.info("Compilation du workflow...")
-try:
-    router_workflow = router_builder.compile()
-    logging.info("Workflow compilé avec succès!")
-except Exception as e:
-    logging.error(f"Erreur lors de la compilation du workflow: {e}")
-    raise
+router_workflow = router_builder.compile()
 
 
 # Invoke
-# Aucun test automatique n'est nécessaire ici
-# L'agent sera testé via l'API et l'interface utilisateur
+# Pour tester l'agent avec l'outil de génération de titres
+def test_agent():
+    logging.info("\n\n=== DÉBUT DU TEST DE L'AGENT AVEC L'OUTIL DE GÉNÉRATION DE TITRES ET INTERRUPTION UTILISATEUR ===")
+    
+    # Test avec une requête d'histoire
+    test_input = "Raconte-moi une histoire sur les robots"
+    logging.info(f"Test avec l'entrée: '{test_input}'")
+    
+    # Créer un checkpoint pour pouvoir reprendre l'exécution après l'interruption
+    checkpoint = Checkpoint()
+    
+    # Première étape : jusqu'à l'interruption utilisateur
+    state = router_workflow.invoke({"input": test_input}, checkpoint=checkpoint)
+    
+    # Afficher le message d'interruption
+    logging.info(f"Message d'interruption: '{state['output']}'")
+    
+    # Dans un système réel, on attendrait ici l'entrée de l'utilisateur
+    # Pour la démonstration, nous simulons une approbation
+    
+    # Continuer l'exécution avec l'approbation utilisateur
+    final_state = router_workflow.invoke({"user_approval": True}, checkpoint=checkpoint)
+    
+    logging.info(f"Sortie finale: '{final_state['output']}'")
+    logging.info("=== FIN DU TEST DE L'AGENT AVEC L'OUTIL DE GÉNÉRATION DE TITRES ET INTERRUPTION UTILISATEUR ===\n\n")
+    return final_state
+
+# Exécuter le test
+test_result = test_agent()
+print("Résultat final:", test_result["output"])
