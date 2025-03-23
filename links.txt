@@ -1,1 +1,5 @@
 https://github.com/zazencodes/zazencodes-season-2/blob/main/src/ai-scientific-research-agent/sci_research_agent/workflow_2.py
+
+
+
+https://github.com/sunnysavita10/LangGraph-End-to-End-Course/blob/main/AgenticRAG/Agentic_RAG.ipynb
