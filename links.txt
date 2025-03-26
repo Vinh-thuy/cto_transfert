@@ -3,3 +3,5 @@ https://github.com/zazencodes/zazencodes-season-2/blob/main/src/ai-scientific-re
 
 
 https://github.com/sunnysavita10/LangGraph-End-to-End-Course/blob/main/AgenticRAG/Agentic_RAG.ipynb
+
+https://github.com/rajib76/langgraph_examples/blob/main/12_human_in_the_loop.py
