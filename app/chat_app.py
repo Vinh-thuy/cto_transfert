@@ -221,6 +221,10 @@ class WebSocketClient:
                     "result": message,
                     "agent_name": "Système"
                 }
+                # Afficher le message informatif dans l'interface
+                if hasattr(self, 'chat_app') and hasattr(self.chat_app, 'afficher_message_info'):
+                    self.chat_app.afficher_message_info(message)
+                
             elif auto_continue:
                 # Message pour progression automatique entre agents
                 message_payload = {
@@ -403,6 +407,20 @@ class ChatApp(param.Parameterized):
         
         # Initialisation des composants Panel
         self.chat_history = pn.Column(pn.pane.Markdown(welcome_message, sizing_mode='stretch_width'), scroll=True)
+
+    def afficher_message_info(self, message: str, color: str = 'blue'):
+        """
+        Affiche un message d'information dans l'historique de chat.
+        
+        Args:
+            message (str): Le message informatif à afficher
+            color (str, optional): Couleur du message. Défaut à 'blue'.
+        """
+        info_message = pn.pane.Markdown(
+            f'<span style="color:{color};">ℹ️ {message}</span>', 
+            sizing_mode='stretch_width'
+        )
+        self.chat_history.append(info_message)
 
 async def callback(contents: str, user: str, chat_instance: pn.chat.ChatInterface):
     global instance
