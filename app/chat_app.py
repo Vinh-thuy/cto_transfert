@@ -195,16 +195,16 @@ class WebSocketClient:
             self.connected = False
             update_connection_status(False)
 
-    async def send_message(self, message, info_only=False):
+    async def send_message(self, message, info_only=False, auto_continue=False):
         # Gestion du verrou conditionnel
         if self._lock is not None:
             async with self._lock:
-                return await self._send_message_impl(message, info_only)
+                return await self._send_message_impl(message, info_only, auto_continue)
         else:
             # Si le verrou est désactivé, exécution directe
-            return await self._send_message_impl(message, info_only)
+            return await self._send_message_impl(message, info_only, auto_continue)
 
-    async def _send_message_impl(self, message, info_only=False):
+    async def _send_message_impl(self, message, info_only=False, auto_continue=False):
         if not self.connected:
             print("🔗 Pas de connexion active, tentative de connexion...")
             success = await self.connect()
@@ -213,25 +213,32 @@ class WebSocketClient:
                 return {'status': 'error', 'message': 'Échec de la connexion'}
         
         try:
-            # Préparer le payload pour un message informatif
+            # Préparer le payload pour différents types de messages
             if info_only:
+                # Message informatif
                 message_payload = {
                     "type": "info",
-                    "content": message,
-                    "user_id": self.user_id
+                    "result": message,
+                    "agent_name": "Système"
+                }
+            elif auto_continue:
+                # Message pour progression automatique entre agents
+                message_payload = {
+                    "type": "agent_message",
+                    "result": message,
+                    "auto_continue": True,
+                    "agent_name": "Agent Actuel"
                 }
             else:
-                # Logique existante pour les messages standard
+                # Message standard
                 if isinstance(message, dict):
                     message_payload = message.copy()
                     if 'user_id' not in message_payload:
                         message_payload["user_id"] = self.user_id
                     
-                    # Adapter au nouveau format avec input_data si nécessaire
                     if 'input' in message_payload and 'input_data' not in message_payload:
                         message_payload["input_data"] = message_payload.pop("input")
                 else:
-                    # Format adapté pour LangGraph avec le nouveau champ input_data
                     message_payload = {
                         "input_data": message,
                         "user_id": self.user_id
@@ -247,11 +254,16 @@ class WebSocketClient:
             
             await self.websocket.send(json_payload)
             
+            # Gestion différenciée selon le type de message
             if info_only:
                 print("💬 Message informatif envoyé avec succès")
                 return {'status': 'success'}
             
-            # Pour les messages non informatifs, continuer avec la logique existante
+            if auto_continue:
+                print("💬 Message d'agent envoyé avec succès (progression automatique)")
+                return {'status': 'success'}
+            
+            # Pour les messages standard, continuer avec la logique existante
             print("💬 Message envoyé avec succès, en attente de réponse...")
             
             # Attendre la réponse avec un timeout
