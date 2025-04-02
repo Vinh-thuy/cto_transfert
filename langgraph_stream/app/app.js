@@ -3,6 +3,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM chargé');
     const chatMessages = document.getElementById('chat-messages');
     const startButton = document.getElementById('start-btn');
     const userInput = document.getElementById('user-input');
@@ -11,6 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const wsUrl = 'ws://localhost:8000/ws/chat';
     let socket = null;
     
+    // Afficher un message de démarrage
+    addMessage('Chatbot prêt. Posez votre question...', 'system');
+
     // Fonction pour ajouter un message au chat
     function addMessage(content, type) {
         const messageDiv = document.createElement('div');
@@ -30,56 +34,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Fonction pour ajouter un caractère en streaming
-    function addStreamingChar(char) {
-        // Vérification des marqueurs spéciaux
-        if (char === '[END]') {
-            console.log('Fin du flux de streaming');
-            return;
-        }
+    function addStreamingChar(char, agentId = 'default') {
+        // Vérifier si un message pour cet agent existe déjà
+        let currentMessage = document.getElementById(`current-${agentId}-message`);
+        let messageContainer = null;
         
-        if (char === '[START_MESSAGE]') {
-            console.log('Début d\'un nouveau message');
-            // Création d'un nouveau message bot
-            addMessage('', 'bot');
-            return;
-        }
-        
-        if (char === '[END_MESSAGE]') {
-            console.log('Fin du message actuel');
-            const currentMessage = document.getElementById('current-bot-message');
-            if (currentMessage) {
-                currentMessage.id = ''; // Permettre un nouveau message
-            }
-            return;
-        }
-        
-        // Gestion des erreurs
-        if (char.startsWith('Erreur :')) {
-            console.error('Erreur détectée:', char);
-            const currentMessage = document.getElementById('current-bot-message');
-            if (currentMessage) {
-                currentMessage.textContent = char;
-                currentMessage.classList.add('error');
-                currentMessage.id = ''; // Permettre un nouveau message
-            } else {
-                // Créer un nouveau message d'erreur si nécessaire
-                const errorMessage = addMessage(char, 'bot error');
-                errorMessage.id = '';
-            }
-            return;
-        }
-        
-        // Gestion normale des caractères
-        const currentMessage = document.getElementById('current-bot-message');
-        if (currentMessage) {
-            const charSpan = document.createElement('span');
-            charSpan.classList.add('streaming-char');
-            charSpan.textContent = char;
-            currentMessage.appendChild(charSpan);
+        // Si pas de message en cours pour cet agent, créer une nouvelle bulle
+        if (!currentMessage) {
+            messageContainer = document.createElement('div');
+            messageContainer.classList.add('message', 'bot-message');
             
-            // Scroll pour suivre le texte
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            currentMessage = document.createElement('div');
+            currentMessage.id = `current-${agentId}-message`;
+            currentMessage.classList.add('message-content');
+            currentMessage.dataset.agentId = agentId;
+            
+            messageContainer.appendChild(currentMessage);
+            chatMessages.appendChild(messageContainer);
         }
+        
+        // Ajouter le caractère
+        const charSpan = document.createElement('span');
+        charSpan.classList.add('streaming-char');
+        charSpan.textContent = char;
+        currentMessage.appendChild(charSpan);
+        
+        // Scroll
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
     
     // Fonction pour se connecter au WebSocket
@@ -89,42 +70,68 @@ document.addEventListener('DOMContentLoaded', () => {
             socket.close();
         }
         
-        socket = new WebSocket(wsUrl);
-        
-        socket.onopen = () => {
-            console.log('Connexion WebSocket établie');
-            console.log('Envoi du message:', message);
+        try {
+            console.log('Tentative de connexion à', wsUrl);
+            socket = new WebSocket(wsUrl);
             
-            // Envoyer le message
-            socket.send(message);
-        };
-        
-        socket.onmessage = (event) => {
-            // Réception des caractères en streaming
-            const char = event.data;
-            addStreamingChar(char);
-        };
-        
-        socket.onclose = (event) => {
-            console.log('Connexion WebSocket fermée', event);
+            socket.onopen = () => {
+                console.log('Connexion WebSocket établie');
+                console.log('Envoi du message:', message);
+                
+                // Envoyer le message
+                socket.send(message);
+                
+                // Ajouter un message de confirmation
+                addMessage('Message envoyé : ' + message, 'system');
+            };
             
-            if (event.wasClean) {
-                addMessage('Conversation terminée.', 'system');
-            } else {
-                addMessage('Connexion perdue. Veuillez réessayer.', 'system');
-            }
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                // Utiliser l'agent_id si présent, sinon utiliser 'default'
+                const agentId = data.agent_id || 'default';
+                
+                if (data.type === 'start') {
+                    // Préparer une nouvelle bulle pour cet agent
+                    const existingMessage = document.getElementById(`current-${agentId}-message`);
+                    if (existingMessage) {
+                        existingMessage.remove();
+                    }
+                }
+                
+                if (data.type === 'stream') {
+                    data.content.split('').forEach(char => {
+                        addStreamingChar(char, agentId);
+                    });
+                }
+                
+                // Autres logiques de gestion des messages...
+            };
             
-            // Renommer l'ID du message bot actuel pour permettre un nouveau message
-            const currentBotMessage = document.getElementById('current-bot-message');
-            if (currentBotMessage) {
-                currentBotMessage.id = '';
-            }
-        };
-        
-        socket.onerror = (error) => {
-            console.error('Erreur WebSocket:', error);
-            addMessage('Erreur de connexion. Veuillez réessayer.', 'system');
-        };
+            socket.onclose = (event) => {
+                console.log('Connexion WebSocket fermée', event);
+                
+                if (event.wasClean) {
+                    addMessage('Conversation terminée.', 'system');
+                } else {
+                    addMessage('Connexion perdue. Veuillez réessayer.', 'system');
+                }
+                
+                // Renommer l'ID du message bot actuel pour permettre un nouveau message
+                const currentBotMessage = document.getElementById('current-bot-message');
+                if (currentBotMessage) {
+                    currentBotMessage.id = '';
+                }
+            };
+            
+            socket.onerror = (error) => {
+                console.error('Erreur WebSocket:', error);
+                addMessage('Erreur de connexion. Veuillez réessayer.', 'system');
+            };
+        } catch (e) {
+            console.error('Exception lors de la connexion WebSocket:', e);
+            addMessage('Erreur de connexion: ' + e.message, 'system');
+        }
     }
     
     // Fonction pour envoyer un message
@@ -158,6 +165,8 @@ document.addEventListener('DOMContentLoaded', () => {
             connectWebSocket(message);
         }
     }
+    
+
     
     // Gestion du clic sur le bouton d'envoi
     startButton.addEventListener('click', sendMessage);
