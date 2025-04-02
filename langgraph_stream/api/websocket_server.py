@@ -66,14 +66,29 @@ class ConnectionManager:
             # Gestion des états de graphe LangGraph
             if isinstance(message, dict) and 'messages' in message:
                 for msg in message.get('messages', []):
+                    # Envoyer un signal de début de message pour cet agent
+                    agent_id_msg = msg.get('agent_id', agent_id)
+                    await websocket.send_json({
+                        'type': 'start',
+                        'agent_id': agent_id_msg
+                    })
+                    
+                    # Envoyer le contenu du message
                     await websocket.send_json({
                         'type': 'stream',
                         'content': msg.get('content', ''),
-                        'agent_id': msg.get('agent_id', agent_id)
+                        'agent_id': agent_id_msg
                     })
             
             # Gestion des messages simples
             elif isinstance(message, str):
+                # Signal de début pour les messages simples
+                await websocket.send_json({
+                    'type': 'start',
+                    'agent_id': agent_id
+                })
+                
+                # Contenu du message
                 await websocket.send_json({
                     'type': 'stream',
                     'content': message,
