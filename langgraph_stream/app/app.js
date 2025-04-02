@@ -34,39 +34,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Fonction pour ajouter un caractère en streaming
-    function addStreamingChar(char, agentId = 'default') {
-        // Vérifier si un message pour cet agent existe déjà
-        let currentMessage = document.getElementById(`current-${agentId}-message`);
-        let messageContainer = null;
+    function addStreamingChar(char, agentId = 'default_agent') {
+        const chatMessages = document.getElementById('chat-messages');
         
-        // Si pas de message en cours pour cet agent, créer une nouvelle bulle
+        // Recherche du conteneur de message spécifique à l'agent
+        let currentMessage = document.getElementById(`current-${agentId}-message`);
+        
+        // Si aucun message n'existe pour cet agent, créer un nouveau conteneur
         if (!currentMessage) {
-            messageContainer = document.createElement('div');
-            messageContainer.classList.add('message', 'bot-message');
+            // Conteneur principal pour l'agent
+            const agentMessageContainer = document.createElement('div');
+            agentMessageContainer.classList.add('agent-message-container');
+            agentMessageContainer.dataset.agentId = agentId;
             
-            // Ajouter un label pour identifier l'agent
+            // Conteneur de message
+            currentMessage = document.createElement('div');
+            currentMessage.id = `current-${agentId}-message`;
+            currentMessage.classList.add('message', 'bot-message');
+            
+            // Étiquette de l'agent
             const agentLabel = document.createElement('div');
             agentLabel.classList.add('agent-label');
             agentLabel.textContent = `Agent: ${agentId}`;
-            messageContainer.appendChild(agentLabel);
             
-            currentMessage = document.createElement('div');
-            currentMessage.id = `current-${agentId}-message`;
-            currentMessage.classList.add('message-content');
-            currentMessage.dataset.agentId = agentId;
+            // Assemblage du conteneur
+            agentMessageContainer.appendChild(agentLabel);
+            agentMessageContainer.appendChild(currentMessage);
             
-            messageContainer.appendChild(currentMessage);
-            chatMessages.appendChild(messageContainer);
-        
+            // Ajout au conteneur principal de messages
+            chatMessages.appendChild(agentMessageContainer);
         }
         
-        // Ajouter le caractère
+        // Ajout du caractère au message
         const charSpan = document.createElement('span');
-        charSpan.classList.add('streaming-char');
         charSpan.textContent = char;
         currentMessage.appendChild(charSpan);
         
-        // Scroll
+        // Défilement automatique
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
     
@@ -103,25 +107,12 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             
             socket.onmessage = function(event) {
-                console.log('Message reçu:', event.data);
                 const data = JSON.parse(event.data);
                 
                 // Utiliser l'agent_id si présent, sinon utiliser 'default'
-                const agentId = data.agent_id || 'default';
-                console.log('Agent ID:', agentId, 'Type:', data.type);
-                
-                if (data.type === 'start') {
-                    console.log('Début de message pour agent:', agentId);
-                    // Préparer une nouvelle bulle pour cet agent
-                    const existingMessage = document.getElementById(`current-${agentId}-message`);
-                    if (existingMessage) {
-                        console.log('Suppression du message existant pour agent:', agentId);
-                        existingMessage.remove();
-                    }
-                }
+                const agentId = data.agent_id || 'default_agent';
                 
                 if (data.type === 'stream') {
-                    console.log('Streaming pour agent:', agentId, 'Contenu:', data.content);
                     data.content.split('').forEach(char => {
                         addStreamingChar(char, agentId);
                     });
