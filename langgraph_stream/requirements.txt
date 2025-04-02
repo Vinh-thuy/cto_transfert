@@ -1,0 +1,7 @@
+fastapi==0.104.1
+uvicorn==0.23.2
+websockets==11.0.3
+langgraph==0.0.20
+pydantic==2.4.2
+langchain>=0.1.0,<0.2.0
+langchain-core>=0.1.0,<0.2.0
