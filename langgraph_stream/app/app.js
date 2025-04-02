@@ -63,12 +63,22 @@ document.addEventListener('DOMContentLoaded', () => {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
     
+    // Fonction pour effacer les messages précédents
+    function clearPreviousMessages() {
+        // Supprimer tous les messages existants
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.innerHTML = '';
+    }
+    
     // Fonction pour se connecter au WebSocket
     function connectWebSocket(message = 'Bonjour') {
         // Fermer toute connexion existante
         if (socket) {
             socket.close();
         }
+        
+        // Effacer les messages précédents avant chaque nouvelle conversation
+        clearPreviousMessages();
         
         try {
             console.log('Tentative de connexion à', wsUrl);
