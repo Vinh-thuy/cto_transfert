@@ -53,11 +53,62 @@ class ConnectionManager:
         self.active_connections.remove(websocket)
         logger.info(f"WebSocket connection closed. Total connections: {len(self.active_connections)}")
     
-    async def send_message(self, message: str, websocket: WebSocket):
+    async def send_message(self, message, websocket, agent_id='default'):
+        """
+        Envoyer un message avec support des différents types de données
+        
+        Args:
+            message: Peut être un message simple, un dictionnaire d'état de graphe, ou une liste de messages
+            websocket: Le websocket de destination
+            agent_id: Identifiant de l'agent par défaut
+        """
         try:
-            await websocket.send_text(message)
+            # Gestion des états de graphe LangGraph
+            if isinstance(message, dict) and 'messages' in message:
+                for msg in message.get('messages', []):
+                    await websocket.send_json({
+                        'type': 'stream',
+                        'content': msg.get('content', ''),
+                        'agent_id': msg.get('agent_id', agent_id)
+                    })
+            
+            # Gestion des messages simples
+            elif isinstance(message, str):
+                await websocket.send_json({
+                    'type': 'stream',
+                    'content': message,
+                    'agent_id': agent_id
+                })
+            
+            # Gestion des listes de messages
+            elif isinstance(message, list):
+                for item in message:
+                    await websocket.send_json({
+                        'type': 'stream',
+                        'content': str(item),
+                        'agent_id': agent_id
+                    })
+            
+            # Gestion des autres types
+            else:
+                await websocket.send_json({
+                    'type': 'stream',
+                    'content': str(message),
+                    'agent_id': agent_id
+                })
+        
         except Exception as e:
             logger.error(f"Error sending message: {e}")
+
+    async def stream_response(self, websocket, graph_state):
+        """Streamer les réponses avec support multi-agents"""
+        for message in graph_state['messages']:
+            # Envoyer l'identifiant de l'agent avec le message
+            await websocket.send_json({
+                'type': 'stream',
+                'content': message['content'],
+                'agent_id': message.get('agent_id', 'default')
+            })
 
 manager = ConnectionManager()
 
