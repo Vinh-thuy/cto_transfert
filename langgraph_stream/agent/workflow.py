@@ -82,7 +82,7 @@ async def salutation_node(state: GraphState) -> Dict[str, Any]:
         }
 
 async def conversation_node(state: GraphState) -> Dict[str, Any]:
-    """Nœud de conversation qui approfondit l'échange"""
+    """Nœud de conversation qui ne considère que la dernière question"""
     if client is None:
         ai_response = "Erreur : Configuration OpenAI invalide"
         return {
@@ -90,14 +90,19 @@ async def conversation_node(state: GraphState) -> Dict[str, Any]:
             "ai_response": ai_response
         }
     
-    # Récupérer l'historique des messages
+    # Récupérer UNIQUEMENT le dernier message de l'utilisateur
     messages = state.get('messages', [])
+    last_user_message = next((msg for msg in reversed(messages) if msg['role'] == 'user'), None)
     
-    # Préparer les messages pour le contexte
     try:
+        # Préparer les messages pour le contexte
         context_messages = [
             {"role": "system", "content": "Tu es un assistant français conversationnel."}
-        ] + messages
+        ]
+        
+        # Ajouter uniquement le dernier message utilisateur
+        if last_user_message:
+            context_messages.append(last_user_message)
         
         # Appel au LLM pour continuer la conversation
         response = await client.chat.completions.create(
@@ -130,6 +135,55 @@ async def conversation_node(state: GraphState) -> Dict[str, Any]:
             "ai_response": error_msg
         }
 
+async def resume_conversation_node(state: GraphState) -> Dict[str, Any]:
+    """Nœud qui résume la conversation précédente"""
+    if client is None:
+        ai_response = "Erreur : Configuration OpenAI invalide"
+        return {
+            "messages": [{"role": "assistant", "content": ai_response}],
+            "ai_response": ai_response
+        }
+    
+    # Récupérer l'historique des messages
+    messages = state.get('messages', [])
+    
+    try:
+        # Préparer les messages pour le résumé
+        context_messages = [
+            {"role": "system", "content": "Résume brièvement la conversation précédente en français."}
+        ] + messages
+        
+        # Appel au LLM pour résumer
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=context_messages,
+            stream=True
+        )
+        
+        # Extraire la réponse en mode streaming
+        ai_response = ""
+        async for chunk in response:
+            if chunk.choices and chunk.choices[0].delta.content:
+                content = chunk.choices[0].delta.content
+                ai_response += content
+                # Stocker le morceau pour le streaming
+                global streaming_chunks
+                streaming_chunks.append(content)
+        
+        # Retourner l'état final
+        return {
+            "messages": [
+                {"role": "assistant", "content": f"Résumé de la conversation : {ai_response}"}
+            ],
+            "ai_response": ai_response
+        }
+    except Exception as e:
+        error_msg = f"Erreur de résumé : {str(e)}"
+        return {
+            "messages": [{"role": "assistant", "content": error_msg}],
+            "ai_response": error_msg
+        }
+
 def create_graph():
     """Crée et configure le workflow LangGraph"""
     workflow = StateGraph(GraphState)
@@ -137,11 +191,13 @@ def create_graph():
     # Ajout des nœuds
     workflow.add_node("salutation", salutation_node)
     workflow.add_node("conversation", conversation_node)
+    workflow.add_node("resume_conversation", resume_conversation_node)
     
     # Configuration des transitions
     workflow.set_entry_point("salutation")
     workflow.add_edge("salutation", "conversation")
-    workflow.add_edge("conversation", END)
+    workflow.add_edge("conversation", "resume_conversation")
+    workflow.add_edge("resume_conversation", END)
     
     # Compilation du graphe
     return workflow.compile()
