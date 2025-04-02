@@ -103,20 +103,25 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             
             socket.onmessage = function(event) {
+                console.log('Message reçu:', event.data);
                 const data = JSON.parse(event.data);
                 
                 // Utiliser l'agent_id si présent, sinon utiliser 'default'
                 const agentId = data.agent_id || 'default';
+                console.log('Agent ID:', agentId, 'Type:', data.type);
                 
                 if (data.type === 'start') {
+                    console.log('Début de message pour agent:', agentId);
                     // Préparer une nouvelle bulle pour cet agent
                     const existingMessage = document.getElementById(`current-${agentId}-message`);
                     if (existingMessage) {
+                        console.log('Suppression du message existant pour agent:', agentId);
                         existingMessage.remove();
                     }
                 }
                 
                 if (data.type === 'stream') {
+                    console.log('Streaming pour agent:', agentId, 'Contenu:', data.content);
                     data.content.split('').forEach(char => {
                         addStreamingChar(char, agentId);
                     });
