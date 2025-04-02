@@ -53,42 +53,33 @@ class ConnectionManager:
         self.active_connections.remove(websocket)
         logger.info(f"WebSocket connection closed. Total connections: {len(self.active_connections)}")
     
-    async def send_message(self, message, websocket, agent_id='default'):
-        """
-        Envoyer un message avec support des différents types de données
-        
-        Args:
-            message: Peut être un message simple, un dictionnaire d'état de graphe, ou une liste de messages
-            websocket: Le websocket de destination
-            agent_id: Identifiant de l'agent par défaut
-        """
+    async def send_message(self, message, websocket: WebSocket, agent_id='default'):
+        """Amélioration de l'envoi de messages avec support multi-agents"""
         try:
-            # Gestion des états de graphe LangGraph
-            if isinstance(message, dict) and 'messages' in message:
-                for msg in message.get('messages', []):
-                    # Envoyer un signal de début de message pour cet agent
-                    agent_id_msg = msg.get('agent_id', agent_id)
-                    await websocket.send_json({
-                        'type': 'start',
-                        'agent_id': agent_id_msg
-                    })
-                    
-                    # Envoyer le contenu du message
-                    await websocket.send_json({
-                        'type': 'stream',
-                        'content': msg.get('content', ''),
-                        'agent_id': agent_id_msg
-                    })
+            # Gestion des messages avec métadonnées d'agent
+            if isinstance(message, dict) and 'content' in message:
+                # Nouveau format de chunk avec content et agent_id
+                agent_id = message.get('agent_id', agent_id)
+                content = message.get('content')
+                await websocket.send_json({
+                    'type': 'stream',
+                    'content': content,
+                    'agent_id': agent_id
+                })
+            
+            # Gestion des messages avec métadonnées d'agent
+            elif isinstance(message, dict):
+                # Messages avec structure complexe
+                agent_id = message.get('agent_id', agent_id)
+                content = message.get('content', str(message))
+                await websocket.send_json({
+                    'type': 'stream',
+                    'content': content,
+                    'agent_id': agent_id
+                })
             
             # Gestion des messages simples
             elif isinstance(message, str):
-                # Signal de début pour les messages simples
-                await websocket.send_json({
-                    'type': 'start',
-                    'agent_id': agent_id
-                })
-                
-                # Contenu du message
                 await websocket.send_json({
                     'type': 'stream',
                     'content': message,
@@ -98,10 +89,12 @@ class ConnectionManager:
             # Gestion des listes de messages
             elif isinstance(message, list):
                 for item in message:
+                    # Essayer de préserver l'agent_id si possible
+                    item_agent_id = item.get('agent_id', agent_id) if isinstance(item, dict) else agent_id
                     await websocket.send_json({
                         'type': 'stream',
                         'content': str(item),
-                        'agent_id': agent_id
+                        'agent_id': item_agent_id
                     })
             
             # Gestion des autres types
@@ -117,12 +110,18 @@ class ConnectionManager:
 
     async def stream_response(self, websocket, graph_state):
         """Streamer les réponses avec support multi-agents"""
-        for message in graph_state['messages']:
+        # Utiliser l'agent_id global du graphe si présent
+        global_agent_id = graph_state.get('agent_id', 'default')
+        
+        for message in graph_state.get('messages', []):
+            # Prioriser l'agent_id du message individuel
+            agent_id = message.get('agent_id', global_agent_id)
+            
             # Envoyer l'identifiant de l'agent avec le message
             await websocket.send_json({
                 'type': 'stream',
                 'content': message['content'],
-                'agent_id': message.get('agent_id', 'default')
+                'agent_id': agent_id
             })
 
 manager = ConnectionManager()
