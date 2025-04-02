@@ -43,14 +43,33 @@ async def get_streaming_chunks():
     return chunks_copy
 
 def map_node_to_agent_id(node_name):
-    """Mapper les noms de nœuds à des identifiants d'agents"""
+    """Mapper les noms de nœuds à des identifiants d'agents
+    
+    Args:
+        node_name (str): Nom du nœud à mapper
+    
+    Returns:
+        str: Identifiant de l'agent correspondant
+    """
+    # Convertir node_name en chaîne si ce n'est pas déjà le cas
+    node_name = str(node_name).lower()
+    
+    # Mapping plus flexible et robuste
     agent_mapping = {
-        'salutation_node': 'salutation_agent',
-        'conversation_node': 'conversation_agent', 
-        'resume_conversation_node': 'resume_agent',
-        'error_node': 'error_agent'
+        'salutation': 'salutation_agent',
+        'conversation': 'conversation_agent', 
+        'resume_conversation': 'resume_agent',
+        'error': 'error_agent',
+        'default': 'default_agent'
     }
-    return agent_mapping.get(node_name, 'default_agent')
+    
+    # Recherche partielle pour gérer les variations de noms
+    for key, agent_id in agent_mapping.items():
+        if key in node_name:
+            return agent_id
+    
+    # Retourner un agent par défaut si aucun mapping n'est trouvé
+    return 'default_agent'
 
 async def salutation_node(state: GraphState) -> Dict[str, Any]:
     """Nœud de salutation qui génère une réponse initiale"""
@@ -266,19 +285,44 @@ async def execute_graph_stream(human_input: str = "Bonjour") -> AsyncGenerator[s
     
     try:
         # Exécution du graphe
+        current_node = 'salutation'  # Point de départ par défaut
         async for state in graph.astream(initial_state):
-            # Récupérer le nom du nœud actuel
-            current_node = graph.get_state().get('__running_node')
-            agent_id = map_node_to_agent_id(current_node)
+            try:
+                # Débogage : afficher l'état complet
+                print(f"Current state: {state}")
+                
+                # Essayer de récupérer le nœud actuel différemment
+                if hasattr(state, 'current_node'):
+                    current_node = state.current_node
+                elif isinstance(state, dict) and '__running_node' in state:
+                    current_node = state['__running_node']
+                
+                # Débogage : afficher le nœud courant
+                print(f"Current node: {current_node}")
+                
+                agent_id = map_node_to_agent_id(current_node)
+                
+                # Récupérer les morceaux de streaming
+                chunks = await get_streaming_chunks()
+                
+                # Débogage : afficher les chunks
+                print(f"Chunks for node {current_node}: {chunks}")
+                
+                for chunk in chunks:
+                    # Vérifier que chunk n'est pas None
+                    if chunk is not None:
+                        yield {
+                            'content': chunk,
+                            'agent_id': agent_id
+                        }
+                    await asyncio.sleep(0.01)  # Pause légère pour un meilleur effet visuel
             
-            # Récupérer les morceaux de streaming
-            chunks = await get_streaming_chunks()
-            for chunk in chunks:
+            except Exception as node_error:
+                print(f"Erreur dans le nœud {current_node}: {node_error}")
                 yield {
-                    'content': chunk,
-                    'agent_id': agent_id
+                    'content': f"Erreur dans le nœud {current_node}: {node_error}",
+                    'agent_id': 'error_agent'
                 }
-                await asyncio.sleep(0.01)  # Pause légère pour un meilleur effet visuel
     
     except Exception as e:
         error_message = f"Erreur lors de l'exécution du graphe : {str(e)}"
