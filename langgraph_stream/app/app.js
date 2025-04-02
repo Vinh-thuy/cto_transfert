@@ -44,6 +44,12 @@ document.addEventListener('DOMContentLoaded', () => {
             messageContainer = document.createElement('div');
             messageContainer.classList.add('message', 'bot-message');
             
+            // Ajouter un label pour identifier l'agent
+            const agentLabel = document.createElement('div');
+            agentLabel.classList.add('agent-label');
+            agentLabel.textContent = `Agent: ${agentId}`;
+            messageContainer.appendChild(agentLabel);
+            
             currentMessage = document.createElement('div');
             currentMessage.id = `current-${agentId}-message`;
             currentMessage.classList.add('message-content');
@@ -51,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             messageContainer.appendChild(currentMessage);
             chatMessages.appendChild(messageContainer);
+        
         }
         
         // Ajouter le caractère
