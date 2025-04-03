@@ -47,3 +47,55 @@ Focus sur la gestion de l’infrastructure IT, des incidents et des changements 
 
 En résumé, le CTO dans une banque joue un rôle stratégique en alignant les initiatives technologiques avec les objectifs commerciaux, tout en assurant la sécurité, la conformité et l’efficacité des systèmes d’information. Cette description détaillée du persona permettra à l’agent LLM de mieux comprendre le contexte et les responsabilités du CTO, facilitant ainsi des interactions plus pertinentes et précises.
 
+
+
+
+
+Fiche de poste : Data Manager
+
+Mission principale :
+Assurer la gestion efficace des données de l’entreprise en garantissant leur qualité, leur accessibilité et leur sécurité, afin de soutenir les objectifs stratégiques et opérationnels de l’organisation.
+
+⸻
+
+Activités principales :
+
+1. Gouvernance des données :
+	•	Établir et appliquer des politiques pour une gestion efficace des données, incluant la collecte, l’analyse et la distribution.
+	•	Assurer la conformité avec les réglementations en vigueur, notamment le RGPD. ￼
+	•	Superviser la qualité des données en mettant en place des procédures de contrôle et d’amélioration continue.
+
+2. Accessibilité et exploitation des données :
+	•	Garantir l’accessibilité optimale des données pour les équipes internes, notamment les data analysts et les équipes IA.
+	•	Collaborer avec les différentes équipes pour comprendre leurs besoins en données et fournir des solutions adaptées.
+
+3. Sécurité et protection des données :
+	•	Mettre en place des procédures sécurisées pour la gestion et l’analyse des données, en veillant à leur intégrité et à leur confidentialité.
+	•	Surveiller et analyser les systèmes d’information pour détecter et résoudre les problèmes liés à la sécurité des données.
+
+4. Valorisation des données :
+	•	Identifier et exploiter les opportunités de valorisation des données pour répondre aux besoins des équipes produit et maximiser leur impact sur les solutions IA.
+	•	Concevoir et déployer des solutions de reporting et de visualisation des données pour faciliter la prise de décision.
+
+⸻
+
+Compétences requises :
+	•	Techniques :
+	•	Maîtrise des langages de programmation liés à la gestion de données, tels que Python et SQL. ￼
+	•	Connaissance des outils de gestion de bases de données et des systèmes d’information.
+	•	Compréhension des concepts liés à l’intelligence artificielle et aux modèles de langage.
+	•	Expérience en gestion de projets techniques liés à la data et à l’IA.
+	•	Analytiques :
+	•	Capacité à analyser et interpréter des données complexes pour en extraire des informations pertinentes.
+	•	Aptitude à résoudre des problèmes et à proposer des solutions innovantes basées sur les données.
+	•	Relationnelles :
+	•	Excellentes compétences en communication et en collaboration inter-équipes.
+	•	Capacité à conseiller et accompagner les différentes parties prenantes dans l’utilisation et la gestion des données.
+
+⸻
+
+Profil recherché :
+	•	Diplôme en informatique, statistiques, gestion des données ou domaine connexe.
+	•	Expérience significative en gestion des données, idéalement dans un environnement lié à l’intelligence artificielle.
+	•	Esprit proactif, rigoureux et orienté vers la qualité.
+	•	Capacité à travailler de manière autonome tout en collaborant efficacement avec les différentes équipes.
