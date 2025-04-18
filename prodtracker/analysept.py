@@ -400,86 +400,32 @@ def compute_mttr_trends(df: pd.DataFrame, window: int = 7) -> pd.DataFrame:
 
 
 def main():
-    import sys
-    from pathlib import Path
-    files = sys.argv[1:]
-    if not files:
-        print("Usage: python analysis_metrics_optimized.py <csv1> [<csv2> ...]")
-        return
-    all_metrics = {}
-    raw_dfs = {}
-    # Catégorisation explicite des datasets
-    incident_names = []
-    change_names = []
-    mttr_names = []
-    breach_sla_names = []
-    external_names = []
-    for path in files:
-        df = pd.read_csv(path, parse_dates=['Day'])
-        if df.columns[0] != 'Pole':
-            df = df.rename(columns={df.columns[0]: 'Pole'})
-        name = Path(path).stem
-        raw_dfs[name] = df
-        lname = name.lower()
-        if "external" in lname:
-            external_names.append(name)
-        elif any(x in lname for x in ["change", "operated", "standard", "cancelled", "failed", "emergency"]):
-            change_names.append(name)
-        elif any(x in lname for x in ["p1 incident", "p2 incident", "p3 incident", "p4 incident", "p5 incident"]):
-            incident_names.append(name)
-        elif any(x in lname for x in ["mttr", "resolution_time_avg"]):
-            mttr_names.append(name)
-        elif any(x in lname for x in ["breach", "breaching_sla"]):
-            breach_sla_names.append(name)
-        metrics = compute_key_metrics(df)
-        metrics_dict = metrics.set_index('Pole').to_dict(orient='index')
-        print(f"\n--- Prompt pour {name} ---\n" + generate_prompt(metrics_dict, name))
-        all_metrics[name] = metrics_dict
-    # Date de référence
-    import argparse
-    from datetime import datetime
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--refdate', type=str, help="Date de référence au format YYYY-MM-DD (optionnel)")
-    args, _ = parser.parse_known_args()
-    if args.refdate:
-        ref_date = pd.to_datetime(args.refdate)
-    else:
-        ref_date = pd.to_datetime(datetime.now().strftime('%Y-%m-%d'))
-    
-    def last_n_days(df, n):
-        return df[df['Day'] >= (ref_date - pd.Timedelta(days=n-1))]
+    # --- Chargement des données ---
+    # Dans la version finale, tu fourniras directement les DataFrames prêts à l'emploi pour chaque catégorie
+    # Exemple :
+    #   df_incidents_par_prio = { 'P1': df_p1, 'P2': df_p2, ... }
+    #   df_changes_par_type = { 'standard': df_standard, ... }
+    #   df_ext, df_mttr, df_breach = ...
+    # Le code de chargement CSV et de catégorisation est mis en commentaire ci-dessous :
+  
 
-    # Analyse incidents internes : un DataFrame par priorité (P1 à P5)
-    df_incidents_par_prio = {}
-    for prio in ["p1", "p2", "p3", "p4", "p5"]:
-        prio_names = [n for n in incident_names if prio in n.lower()]
-        if prio_names:
-            df_incidents_par_prio[prio.upper()] = pd.concat([raw_dfs[n] for n in prio_names], ignore_index=True)
-
-    # Analyse incidents externes (un seul axe)
-    df_ext = None
-    if external_names:
-        df_ext = pd.concat([raw_dfs[n] for n in external_names], ignore_index=True)
-
-    # Analyse changes : un DataFrame par typologie
-    df_changes_par_type = {}
-    for typ in ["standard", "emergency", "failed", "cancel", "operated", "total"]:
-        typ_names = [n for n in change_names if typ in n.lower()]
-        if typ_names:
-            df_changes_par_type[typ] = pd.concat([raw_dfs[n] for n in typ_names], ignore_index=True)
-
-    # Analyse MTTR (un seul axe)
-    df_mttr = pd.concat([raw_dfs[n] for n in mttr_names], ignore_index=True) if mttr_names else None
-    # Analyse SLA breach (un seul axe)
-    df_breach = pd.concat([raw_dfs[n] for n in breach_sla_names], ignore_index=True) if breach_sla_names else None
-
-    # DEBUG : Affiche les DataFrames incidents par priorité et changes par typologie
-    print("\n--- DataFrames incidents par priorité ---")
-    for prio, df in df_incidents_par_prio.items():
-        print(f"Priorité {prio} : {df.shape[0]} lignes")
-    print("\n--- DataFrames changes par typologie ---")
-    for typ, df in df_changes_par_type.items():
-        print(f"Type {typ} : {df.shape[0]} lignes")
+  
+    # === EXEMPLE DE STRUCTURE DE DONNÉES FACTICES POUR TESTER LE PIPELINE ===
+    # Tu remplaceras ces DataFrames par tes vraies données quand tu les auras
+    # Colonnes minimales attendues : 'Pole', 'day', 'Value' (attention : 'day' en minuscule)
+    columns = ['Pole', 'day', 'Value']
+    # DataFrames incidents par priorité (P1 à P5)
+    df_incidents_par_prio = {prio: pd.DataFrame(columns=columns) for prio in ["P1", "P2", "P3", "P4", "P5"]}
+    # DataFrames changes par typologie
+    df_changes_par_type = {typ: pd.DataFrame(columns=columns) for typ in ["standard", "emergency", "failed", "cancel", "operated", "total"]}
+    # DataFrame incidents externes
+    df_ext = pd.DataFrame(columns=columns)
+    # DataFrame MTTR
+    df_mttr = pd.DataFrame(columns=columns)
+    # DataFrame SLA breach
+    df_breach = pd.DataFrame(columns=columns)
+    # --- Fin des exemples factices ---
+    # Remplace ces DataFrames par tes vraies données au moment voulu.
 
     # === ANALYSE PAR AXE (priorité, typologie, etc.) ===
     api_key = os.getenv("OPENAI_API_KEY")
@@ -626,116 +572,14 @@ Votre mission :
         print(f"[LLM][GLOBAL] Erreur : {e}")
         synthese_globale = f"[ERREUR LLM GLOBAL] {e}"
 
-    # Fenêtres multi-période
-    for window in [7, 30, 90]:
-        # Incidents internes
-        if df_inc is not None:
-            df_inc_win = last_n_days(df_inc, window)
-            all_metrics[f'IncidentCounts_{window}d'] = df_inc_win.groupby('Pole')['Value'].sum().to_dict()
-            all_metrics[f'IncidentAnomalies_{window}d'] = detect_anomaly_clusters({'incidents': df_inc_win})
-        # Incidents externes
-        if df_ext is not None:
-            df_ext_win = last_n_days(df_ext, window)
-            all_metrics[f'ExternalIncidentCounts_{window}d'] = df_ext_win.groupby('Pole')['Value'].sum().to_dict()
-            all_metrics[f'ExternalIncidentAnomalies_{window}d'] = detect_anomaly_clusters({'incidents_ext': df_ext_win})
-        # Changes
-        if df_chg is not None:
-            df_chg_win = last_n_days(df_chg, window)
-            for typ in ['standard','emergency','failed','cancel','total','operated']:
-                typ_names = [n for n in change_names if typ in n.lower()]
-                if typ_names:
-                    df_typ = pd.concat([raw_dfs[n] for n in typ_names], ignore_index=True)
-                    df_typ_win = last_n_days(df_typ, window)
-                    all_metrics[f'Change_{typ.capitalize()}_{window}d'] = df_typ_win.groupby('Pole')['Value'].sum().to_dict()
-            all_metrics[f'ChangeAnomalies_{window}d'] = detect_anomaly_clusters({'changes': df_chg_win})
-            if df_inc is not None:
-                all_metrics[f'IncToChangeRatio_{window}d'] = compute_ratio_incidents_changes(df_inc_win, df_chg_win).set_index('Pole').to_dict(orient='index')
-        # MTTR
-        if df_mttr is not None:
-            df_mttr_win = last_n_days(df_mttr, window)
-            all_metrics[f'MTTR_{window}d'] = df_mttr_win.groupby('Pole')['Value'].mean().to_dict()
-        # SLA breach : taux
-        if df_breach is not None and df_mttr is not None:
-            df_breach_win = last_n_days(df_breach, window)
-            df_mttr_win = last_n_days(df_mttr, window)
-            for pole in df_breach_win['Pole'].unique():
-                total = df_mttr_win[df_mttr_win['Pole']==pole]['Value'].sum()
-                breach = df_breach_win[df_breach_win['Pole']==pole]['Value'].sum()
-                taux = breach/total if total else 0
-                all_metrics.setdefault(f'SLA_BreachRate_{window}d', {})[pole] = taux
 
-        df_inc = pd.concat([raw_dfs[n] for n in incident_names], ignore_index=True)
-        df_chg = pd.concat([raw_dfs[n] for n in change_names], ignore_index=True)
-        for window in [7, 30, 90]:
-            # Incidents par priorité
-            df_inc_win = last_n_days(df_inc, window)
-            all_metrics[f'IncidentCounts_{window}d'] = df_inc_win.groupby('Pole')['Value'].sum().to_dict()
-            # Changes par typologie
-            for typ in ['standard','emergency','failed','cancel','total']:
-                typ_names = [n for n in change_names if typ in n.lower()]
-                if typ_names:
-                    df_typ = pd.concat([raw_dfs[n] for n in typ_names], ignore_index=True)
-                    df_typ_win = last_n_days(df_typ, window)
-                    all_metrics[f'Change_{typ.capitalize()}_{window}d'] = df_typ_win.groupby('Pole')['Value'].sum().to_dict()
-            # Ratio incidents/changes total
-            all_metrics[f'IncToChangeRatio_{window}d'] = compute_ratio_incidents_changes(df_inc_win, df_chg).set_index('Pole').to_dict(orient='index')
-            # Anomalies incidents/changes
-            all_metrics[f'IncidentAnomalies_{window}d'] = detect_anomaly_clusters({'incidents': df_inc_win})
-            all_metrics[f'ChangeAnomalies_{window}d'] = detect_anomaly_clusters({'changes': df_chg})
-    # Axes résolution incidents : MTTR, SLA
-    sla_dfs = [df for df in raw_dfs.values() if 'ResolutionTime' in df.columns]
-    if sla_dfs:
-        df_sla = sla_dfs[0]
-        sla_thresholds = {'P1': 2, 'P2': 4}
-        for window in [7, 30, 90]:
-            df_sla_win = last_n_days(df_sla, window)
-            all_metrics[f'MTTR_{window}d'] = compute_mttr(df_sla_win).set_index(['Pole','Priority']).to_dict(orient='index')
-            all_metrics[f'SLACompliance_{window}d'] = compute_sla_compliance(df_sla_win, sla_thresholds).set_index(['Pole','Priority']).to_dict(orient='index')
-            all_metrics[f'SLABreachStats_{window}d'] = compute_sla_breach_stats(df_sla_win, sla_thresholds).set_index(['Pole','Priority']).to_dict(orient='index')
-            all_metrics[f'MTTRTrends_{window}d'] = compute_mttr_trends(df_sla_win).to_dict(orient='records')
-    # Axes résolution incidents : MTTR, SLA
-    sla_dfs = [df for df in raw_dfs.values() if 'ResolutionTime' in df.columns]
-    if sla_dfs:
-        df_sla = sla_dfs[0]
-        sla_thresholds = {'P1': 2, 'P2': 4}
-        all_metrics['MTTR'] = compute_mttr(df_sla).set_index(['Pole','Priority']).to_dict(orient='index')
-        all_metrics['SLACompliance'] = compute_sla_compliance(df_sla, sla_thresholds).set_index(['Pole','Priority']).to_dict(orient='index')
-        all_metrics['SLABreachStats'] = compute_sla_breach_stats(df_sla, sla_thresholds).set_index(['Pole','Priority']).to_dict(orient='index')
-        all_metrics['MTTRTrends'] = compute_mttr_trends(df_sla).to_dict(orient='records')
-    # Axe 11: incidents internes vs externes
-    ext_incident_names = [n for n in raw_dfs if 'external' in n.lower()]
-    if incident_names and ext_incident_names:
-        df_int = pd.concat([raw_dfs[n] for n in incident_names], ignore_index=True)
-        df_ext = pd.concat([raw_dfs[n] for n in ext_incident_names], ignore_index=True)
-        ext_int_df = compute_external_internal_ratio(df_int, df_ext)
-        all_metrics['ExtIntRatio'] = ext_int_df.set_index('Pole').to_dict(orient='index')
-    # Axes 12 à 15 : SLA
-    sla_dfs = [df for df in raw_dfs.values() if 'ResolutionTime' in df.columns]
-    if sla_dfs:
-        df_sla = sla_dfs[0]
-        sla_thresholds = {'P1': 2, 'P2': 4}
-        mttr_df = compute_mttr(df_sla)
-        sla_comp_df = compute_sla_compliance(df_sla, sla_thresholds)
-        sla_breach_df = compute_sla_breach_stats(df_sla, sla_thresholds)
-        mttr_trend_df = compute_mttr_trends(df_sla)
-        all_metrics['MTTR'] = mttr_df.set_index(['Pole','Priority']).to_dict(orient='index')
-        all_metrics['SLACompliance'] = sla_comp_df.set_index(['Pole','Priority']).to_dict(orient='index')
-        all_metrics['SLABreachStats'] = sla_breach_df.set_index(['Pole','Priority']).to_dict(orient='index')
-        all_metrics['MTTRTrends'] = mttr_trend_df.to_dict(orient='records')
-    # support incidents externes vs internes
-    ext_incident_names = [n for n in raw_dfs if 'external' in n.lower()]
-    if incident_names and ext_incident_names:
-        df_int = pd.concat([raw_dfs[n] for n in incident_names], ignore_index=True)
-        df_ext = pd.concat([raw_dfs[n] for n in ext_incident_names], ignore_index=True)
-        ext_int_df = compute_external_internal_ratio(df_int, df_ext)
-        all_metrics['ExtIntRatio'] = ext_int_df.set_index('Pole').to_dict(orient='index')
     # Analyse intermédiaire LLM par axe d'analyse
     syntheses_axe = {}
     prompts_axe = {}
     # 1. Incidents internes
-    if incident_names:
-        prompts_axe['incidents'] = f"""
-Vous êtes un expert IT analyste. Voici les données d'incidents internes (toutes priorités et périodes confondues) :\n{raw_dfs[incident_names[0]].head(10).to_string(index=False)}\n
+    df_inc = pd.concat(df_incidents_par_prio.values(), ignore_index=True)
+    prompts_axe['incidents'] = f"""
+Vous êtes un expert IT analyste. Voici les données d'incidents internes (toutes priorités et périodes confondues) :\n{df_inc.head(10).to_string(index=False)}\n
 Votre mission :
 - 1. Dégagez les tendances majeures (volumes, évolutions, pics) même à partir de simples comptages, et pour chaque événement clé détecté, précisez la date et la valeur associée.
 - 2. Identifiez toute anomalie, rupture ou signal faible, et indiquez la date et la valeur.
@@ -751,9 +595,9 @@ Format attendu :
 [INCIDENT] Recommandation : ...
 """
     # 2. Changes
-    if change_names:
-        prompts_axe['changes'] = f"""
-Vous êtes un expert IT analyste. Voici les données de changes (toutes typologies et périodes confondues) :\n{raw_dfs[change_names[0]].head(10).to_string(index=False)}\n
+    df_chg = pd.concat(df_changes_par_type.values(), ignore_index=True)
+    prompts_axe['changes'] = f"""
+Vous êtes un expert IT analyste. Voici les données de changes (toutes typologies et périodes confondues) :\n{df_chg.head(10).to_string(index=False)}\n
 Votre mission :
 - 1. Dégagez les tendances majeures (volumes, évolutions, pics) même à partir de simples comptages, et pour chaque point critique, échec, annulation ou urgence détecté, précisez la date et la valeur associée.
 - 2. Identifiez les points critiques, échecs, annulations, urgences, et indiquez la date et la valeur.
@@ -768,9 +612,9 @@ Format attendu :
 [CHANGE] Recommandation : ...
 """
     # 3. MTTR
-    if mttr_names:
+    if df_mttr is not None:
         prompts_axe['mttr'] = f"""
-Vous êtes un expert IT analyste. Voici les données de temps moyen de résolution (MTTR) :\n{raw_dfs[mttr_names[0]].head(10).to_string(index=False)}\n
+Vous êtes un expert IT analyste. Voici les données de temps moyen de résolution (MTTR) :\n{df_mttr.head(10).to_string(index=False)}\n
 Votre mission :
 - 1. Analysez la performance globale (niveaux, variations, dérives), même à partir de simples moyennes, et pour chaque dérive ou anomalie détectée, précisez la date et la valeur.
 - 2. Détectez toute anomalie ou rupture, et indiquez la date et la valeur.
@@ -783,9 +627,9 @@ Format attendu :
 [MTTR] Recommandation : ...
 """
     # 4. SLA breach
-    if breach_sla_names:
+    if df_breach is not None:
         prompts_axe['sla'] = f"""
-Vous êtes un expert IT analyste. Voici les données d'incidents hors SLA :\n{raw_dfs[breach_sla_names[0]].head(10).to_string(index=False)}\n
+Vous êtes un expert IT analyste. Voici les données d'incidents hors SLA :\n{df_breach.head(10).to_string(index=False)}\n
 Votre mission :
 - 1. Identifiez les causes principales des non-conformités, et pour chaque non-conformité détectée, précisez la date et la valeur.
 - 2. Évaluez le risque global pour le service.
@@ -798,9 +642,9 @@ Format attendu :
 [SLA] Mesure corrective : ...
 """
     # 5. Incidents externes
-    if external_names:
+    if df_ext is not None:
         prompts_axe['externes'] = f"""
-Vous êtes un expert IT analyste. Voici les données d'incidents externes :\n{raw_dfs[external_names[0]].head(10).to_string(index=False)}\n
+Vous êtes un expert IT analyste. Voici les données d'incidents externes :\n{df_ext.head(10).to_string(index=False)}\n
 Votre mission :
 - 1. Analysez les tendances et impacts sur la qualité de service, même à partir de simples comptages, et pour chaque événement clé, précisez la date et la valeur.
 - 2. Détectez toute anomalie ou risque fournisseur, et indiquez la date et la valeur.
@@ -834,7 +678,8 @@ Format attendu :
             syntheses_axe[axe] = f"[ERREUR LLM] {e}"
 
     # Génération du prompt CTO (prompt système)
-    prompt_global = generate_global_prompt(all_metrics, syntheses_axe)
+    # prompt_global = generate_global_prompt(all_metrics, syntheses_axe)
+    prompt_global = generate_global_prompt(syntheses_axe)
     print("\n=== PROMPT GLOBAL CTO ===\n" + prompt_global)
 
     # Appel LLM pour la synthèse globale
@@ -850,9 +695,9 @@ Format attendu :
     except Exception as e:
         print(f"[LLM][GLOBAL] Erreur : {e}")
         synthese_globale = f"[ERREUR LLM GLOBAL] {e}"
-    prompt_cto = generate_global_prompt(all_metrics)
-    print("\n=== PROMPT CTO POUR SYSTEME LLM/IA ===\n")
-    print(prompt_cto)
+    # prompt_cto = generate_global_prompt(all_metrics)
+    # print("\n=== PROMPT CTO POUR SYSTEME LLM/IA ===\n")
+    # print(prompt_cto)
 
 if __name__ == '__main__':
     main()
