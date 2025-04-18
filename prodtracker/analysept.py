@@ -445,34 +445,186 @@ def main():
         ref_date = pd.to_datetime(args.refdate)
     else:
         ref_date = pd.to_datetime(datetime.now().strftime('%Y-%m-%d'))
+    
     def last_n_days(df, n):
         return df[df['Day'] >= (ref_date - pd.Timedelta(days=n-1))]
 
-    # Analyse incidents internes
-    if incident_names:
-        df_inc = pd.concat([raw_dfs[n] for n in incident_names], ignore_index=True)
-    else:
-        df_inc = None
-    # Analyse incidents externes
+    # Analyse incidents internes : un DataFrame par priorité (P1 à P5)
+    df_incidents_par_prio = {}
+    for prio in ["p1", "p2", "p3", "p4", "p5"]:
+        prio_names = [n for n in incident_names if prio in n.lower()]
+        if prio_names:
+            df_incidents_par_prio[prio.upper()] = pd.concat([raw_dfs[n] for n in prio_names], ignore_index=True)
+
+    # Analyse incidents externes (un seul axe)
+    df_ext = None
     if external_names:
         df_ext = pd.concat([raw_dfs[n] for n in external_names], ignore_index=True)
-    else:
-        df_ext = None
-    # Analyse changes
-    if change_names:
-        df_chg = pd.concat([raw_dfs[n] for n in change_names], ignore_index=True)
-    else:
-        df_chg = None
-    # Analyse MTTR
-    if mttr_names:
-        df_mttr = pd.concat([raw_dfs[n] for n in mttr_names], ignore_index=True)
-    else:
-        df_mttr = None
-    # Analyse SLA breach
-    if breach_sla_names:
-        df_breach = pd.concat([raw_dfs[n] for n in breach_sla_names], ignore_index=True)
-    else:
-        df_breach = None
+
+    # Analyse changes : un DataFrame par typologie
+    df_changes_par_type = {}
+    for typ in ["standard", "emergency", "failed", "cancel", "operated", "total"]:
+        typ_names = [n for n in change_names if typ in n.lower()]
+        if typ_names:
+            df_changes_par_type[typ] = pd.concat([raw_dfs[n] for n in typ_names], ignore_index=True)
+
+    # Analyse MTTR (un seul axe)
+    df_mttr = pd.concat([raw_dfs[n] for n in mttr_names], ignore_index=True) if mttr_names else None
+    # Analyse SLA breach (un seul axe)
+    df_breach = pd.concat([raw_dfs[n] for n in breach_sla_names], ignore_index=True) if breach_sla_names else None
+
+    # DEBUG : Affiche les DataFrames incidents par priorité et changes par typologie
+    print("\n--- DataFrames incidents par priorité ---")
+    for prio, df in df_incidents_par_prio.items():
+        print(f"Priorité {prio} : {df.shape[0]} lignes")
+    print("\n--- DataFrames changes par typologie ---")
+    for typ, df in df_changes_par_type.items():
+        print(f"Type {typ} : {df.shape[0]} lignes")
+
+    # === ANALYSE PAR AXE (priorité, typologie, etc.) ===
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+
+    syntheses_axe = {}
+    prompts_axe = {}
+
+    # Incidents internes par priorité
+    for prio, df in df_incidents_par_prio.items():
+        axe = f"incidents_P{prio}"
+        prompts_axe[axe] = f"""
+Vous êtes un expert IT analyste. Voici les données d'incidents internes priorité {prio} :\n{df.head(10).to_string(index=False)}\n
+Votre mission :
+- 1. Dégagez les tendances majeures (volumes, évolutions, pics), précisez pour chaque événement clé la date et la valeur.
+- 2. Identifiez toute anomalie, rupture ou signal faible, et indiquez la date et la valeur.
+- 3. Listez les risques ou alertes à surveiller.
+- 4. Proposez 2 à 3 recommandations concrètes pour le CTO.
+- 5. Formatez la synthèse en bullet points, chaque point commençant par [INCIDENT_P{prio}], et pour chaque événement, indiquez toujours la date et la valeur.
+"""
+        try:
+            syntheses_axe[axe] = openai_llm_complete(
+                prompt=prompts_axe[axe],
+                api_key=api_key,
+                base_url=base_url,
+                model=model
+            )
+            print(f"[LLM][{axe}] Réponse OK.")
+        except Exception as e:
+            print(f"[LLM][{axe}] Erreur : {e}")
+            syntheses_axe[axe] = f"[ERREUR LLM] {e}"
+
+    # Changes par typologie
+    for typ, df in df_changes_par_type.items():
+        axe = f"changes_{typ}"
+        prompts_axe[axe] = f"""
+Vous êtes un expert IT analyste. Voici les données de changes typologie {typ} :\n{df.head(10).to_string(index=False)}\n
+Votre mission :
+- 1. Dégagez les tendances majeures (volumes, évolutions, pics), précisez pour chaque événement clé la date et la valeur.
+- 2. Identifiez les points critiques, échecs, annulations, urgences, et indiquez la date et la valeur.
+- 3. Listez les risques ou alertes à surveiller.
+- 4. Proposez 2 à 3 recommandations concrètes pour le CTO.
+- 5. Formatez la synthèse en bullet points, chaque point commençant par [CHANGE_{typ.upper()}], et pour chaque événement, indiquez toujours la date et la valeur.
+"""
+        try:
+            syntheses_axe[axe] = openai_llm_complete(
+                prompt=prompts_axe[axe],
+                api_key=api_key,
+                base_url=base_url,
+                model=model
+            )
+            print(f"[LLM][{axe}] Réponse OK.")
+        except Exception as e:
+            print(f"[LLM][{axe}] Erreur : {e}")
+            syntheses_axe[axe] = f"[ERREUR LLM] {e}"
+
+    # Incidents externes
+    if df_ext is not None:
+        axe = "incidents_externes"
+        prompts_axe[axe] = f"""
+Vous êtes un expert IT analyste. Voici les données d'incidents externes :\n{df_ext.head(10).to_string(index=False)}\n
+Votre mission :
+- 1. Analysez les tendances et impacts sur la qualité de service, précisez pour chaque événement clé la date et la valeur.
+- 2. Détectez toute anomalie ou risque fournisseur, et indiquez la date et la valeur.
+- 3. Proposez 2 recommandations pour le CTO.
+- 4. Formatez la synthèse en bullet points, chaque point commençant par [EXTERNE], et pour chaque événement, indiquez toujours la date et la valeur.
+"""
+        try:
+            syntheses_axe[axe] = openai_llm_complete(
+                prompt=prompts_axe[axe],
+                api_key=api_key,
+                base_url=base_url,
+                model=model
+            )
+            print(f"[LLM][{axe}] Réponse OK.")
+        except Exception as e:
+            print(f"[LLM][{axe}] Erreur : {e}")
+            syntheses_axe[axe] = f"[ERREUR LLM] {e}"
+
+    # MTTR
+    if df_mttr is not None:
+        axe = "mttr"
+        prompts_axe[axe] = f"""
+Vous êtes un expert IT analyste. Voici les données de temps moyen de résolution (MTTR) :\n{df_mttr.head(10).to_string(index=False)}\n
+Votre mission :
+- 1. Analysez la performance globale (niveaux, variations, dérives), précisez pour chaque dérive ou anomalie la date et la valeur.
+- 2. Proposez 2 recommandations pour améliorer le MTTR.
+- 3. Formatez la synthèse en bullet points, chaque point commençant par [MTTR], et pour chaque événement, indiquez toujours la date et la valeur.
+"""
+        try:
+            syntheses_axe[axe] = openai_llm_complete(
+                prompt=prompts_axe[axe],
+                api_key=api_key,
+                base_url=base_url,
+                model=model
+            )
+            print(f"[LLM][{axe}] Réponse OK.")
+        except Exception as e:
+            print(f"[LLM][{axe}] Erreur : {e}")
+            syntheses_axe[axe] = f"[ERREUR LLM] {e}"
+
+    # SLA breach
+    if df_breach is not None:
+        axe = "sla_breach"
+        prompts_axe[axe] = f"""
+Vous êtes un expert IT analyste. Voici les données d'incidents hors SLA :\n{df_breach.head(10).to_string(index=False)}\n
+Votre mission :
+- 1. Identifiez les causes principales des non-conformités, précisez pour chaque non-conformité la date et la valeur.
+- 2. Évaluez le risque global pour le service.
+- 3. Proposez 2 mesures correctives prioritaires.
+- 4. Formatez la synthèse en bullet points, chaque point commençant par [SLA], et pour chaque événement, indiquez toujours la date et la valeur.
+"""
+        try:
+            syntheses_axe[axe] = openai_llm_complete(
+                prompt=prompts_axe[axe],
+                api_key=api_key,
+                base_url=base_url,
+                model=model
+            )
+            print(f"[LLM][{axe}] Réponse OK.")
+        except Exception as e:
+            print(f"[LLM][{axe}] Erreur : {e}")
+            syntheses_axe[axe] = f"[ERREUR LLM] {e}"
+
+    # Affichage des synthèses par axe
+    print("\n=== SYNTHESES LLM PAR AXE ===")
+    for axe, synth in syntheses_axe.items():
+        print(f"\n[AXE: {axe}]\n{synth}\n")
+
+    # Génération du prompt global et appel LLM pour la synthèse globale
+    prompt_global = generate_global_prompt({}, syntheses_axe)
+    print("\n=== PROMPT GLOBAL CTO ===\n" + prompt_global)
+    print("\n=== APPEL LLM GLOBAL ===")
+    try:
+        synthese_globale = openai_llm_complete(
+            prompt=prompt_global,
+            api_key=api_key,
+            base_url=base_url,
+            model=model
+        )
+        print("\n=== SYNTHESE GLOBALE LLM ===\n" + synthese_globale)
+    except Exception as e:
+        print(f"[LLM][GLOBAL] Erreur : {e}")
+        synthese_globale = f"[ERREUR LLM GLOBAL] {e}"
 
     # Fenêtres multi-période
     for window in [7, 30, 90]:
