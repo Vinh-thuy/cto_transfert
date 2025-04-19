@@ -378,12 +378,12 @@ def compute_external_internal_ratio(df_int: pd.DataFrame, df_ext: pd.DataFrame) 
 # ------------------------------------------------------------
 def compute_mttr(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcule MTTR (mean, median, p90, p95) par Pole et priorité P1–P5.
-    df doit contenir ['Pole','Priority','ResolutionTime'] (en heures).
+    Calcule MTTR (mean, median, p90, p95) par POL et D.
+    df doit contenir ['Pole','day','Value'].
     """
     def q90(x): return x.quantile(0.9)
     def q95(x): return x.quantile(0.95)
-    stats = (df.groupby(['Pole','Priority'])['ResolutionTime']
+    stats = (df.groupby(['Pole', 'day'])['Value']
              .agg(['mean','median',q90,q95]))
     stats.columns = ['MTTR_mean','MTTR_median','MTTR_p90','MTTR_p95']
     return stats.reset_index()
@@ -398,25 +398,14 @@ def compute_mttr(df: pd.DataFrame) -> pd.DataFrame:
 # - Détail du nombre d’incidents, résolus à temps, en retard
 # Valeur ajoutée : Permet de piloter la performance contractuelle et d’anticiper les pénalités.
 # ------------------------------------------------------------
-def compute_sla_compliance(df: pd.DataFrame, sla_thresholds: dict) -> pd.DataFrame:
+def compute_sla_compliance(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Calcule % incidents résolus dans SLA vs breach pour P1/P2.
-    sla_thresholds ex. {'P1':2,'P2':4} (heures).
+    Agrège le nombre d’incidents par Pole et day.
+    df doit contenir ['Pole','day','Value'] où Value = nb incidents.
     """
-    records = []
-    for (pole, prio), grp in df.groupby(['Pole','Priority']):
-        thresh = sla_thresholds.get(prio)
-        if thresh is None:
-            continue
-        total = len(grp)
-        on_time = (grp['ResolutionTime'] <= thresh).sum()
-        breach = total - on_time
-        records.append({'Pole': pole, 'Priority': prio,
-                        'Total': total, 'OnTime': on_time,
-                        'Breach': breach,
-                        'OnTimePct': on_time/total if total else np.nan})
-    return pd.DataFrame(records)
-
+    stats = df.groupby(['Pole', 'day'])['Value'].sum().reset_index()
+    stats.rename(columns={'Value': 'TotalIncidents'}, inplace=True)
+    return stats
 # Axe 14: Statistiques des breaches SLA (max, p90, p95)
 # Axe 14 : Statistiques des breaches SLA (max, p90, p95)
 # ------------------------------------------------------------
