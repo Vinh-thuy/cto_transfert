@@ -3,7 +3,6 @@ import numpy as np
 from typing import Dict, List
 import os
 import requests  # Tu peux remplacer par httpx si besoin
-from analysis_changes_peaks import compute_change_peaks_analysis
 
 # Exemple d'appel :
 # response = openai_llm_complete(
@@ -33,67 +32,6 @@ def openai_llm_complete(prompt, api_key, base_url="https://api.openai.com/v1", m
     result = response.json()
     return result['choices'][0]['message']['content']
 
-
-# Axe 12 : Indicateurs clés (volatilité, momentum, risque, saisonnalité)
-# ------------------------------------------------------------
-# Objectif : Fournir un ensemble d’indicateurs statistiques avancés pour chaque entité,
-# couvrant la volatilité, le momentum, le risque et la saisonnalité.
-# Méthode :
-# - Calcul de l’écart-type, Bollinger %B, pente MA07, ADX, max drawdown, croissance mensuelle
-# Valeur ajoutée : Permet une analyse fine des dynamiques et des risques sur chaque périmètre.
-# ------------------------------------------------------------
-def compute_key_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute optimized set of metrics by family:
-      - Volatility: std and Bollinger %B on daily values
-      - Momentum: slope of MA07 and ADX on MA07
-      - Risk: max drawdown on cumulative daily
-      - Seasonality: mean month-over-month growth on cumulative monthly
-    """
-    df = df.sort_values(['Pole', 'Day']).copy()
-    results = []
-    for pole, g in df.groupby('Pole'):
-        # Volatility on raw daily values
-        vals = g['Value']
-        vol_std = vals.std()
-        m = vals.rolling(20).mean()
-        s = vals.rolling(20).std()
-        boll_pctB = ((vals.iloc[-1] - m.iloc[-1]) / (2 * s.iloc[-1])) if s.iloc[-1] else np.nan
-
-        # Momentum on MA07
-        ma07 = g['MA07']
-        days = np.arange(len(ma07))
-        slope = np.gradient(ma07, days).mean()
-        # ADX approximation on MA07
-        diff = np.diff(ma07.replace(np.nan, method='ffill'))
-        plus_dm = np.maximum(diff, 0)
-        minus_dm = np.maximum(-diff, 0)
-        tr = np.abs(diff)
-        atr = pd.Series(tr).rolling(14).mean().iloc[-1]
-        plus_di = 100 * pd.Series(plus_dm).rolling(14).mean().iloc[-1] / atr if atr else np.nan
-        minus_di = 100 * pd.Series(minus_dm).rolling(14).mean().iloc[-1] / atr if atr else np.nan
-        adx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di) if (plus_di + minus_di) else np.nan
-
-        # Risk: max drawdown on cumulative daily
-        cum = g['CumDaily']
-        peak = cum.cummax()
-        dd = (cum - peak) / peak
-        max_dd = dd.min()
-
-        # Seasonality: mean MoM on cumulative monthly
-        mom = g['CumMonthly'].pct_change().dropna()
-        mom_mean = mom.mean()
-
-        results.append({
-            'Pole': pole,
-            'Vol_Std': vol_std,
-            'BollPctB': boll_pctB,
-            'Slope_MA07': slope,
-            'ADX_MA07': adx,
-            'MaxDrawdown': max_dd,
-            'MoM_Mean': mom_mean
-        })
-    return pd.DataFrame(results)
 
 
 def generate_prompt(metrics_dict: dict, dataset_name: str) -> str:
@@ -198,17 +136,20 @@ def compute_peak_peaks_analysis(df_inc: pd.DataFrame, z_thresh: float = 2.0) -> 
 # - Calcul du nombre de jours avec Emergency Changes (value>0) par entité
 # Valeur ajoutée : Permet de suivre l'activité d'urgence et d'alerter sur une sur-utilisation potentielle des Emergency Changes.
 # ------------------------------------------------------------
-def compute_emergency_impact(df_em: pd.DataFrame) -> pd.DataFrame:
+def compute_change_peaks_analysis(df_chg: pd.DataFrame, z_thresh: float = 2.0) -> pd.DataFrame:
     """
-    Pour chaque entité, calcule la fréquence de Emergency Changes (jours avec value>0).
+    Pour chaque entité (Pole), identifie les jours où les changes dépassent mean+z_thresh*std,
+    calcule le nombre de pics, la moyenne sur ces pics et la moyenne globale.
     """
     results = []
-    for pole in df_em['Pole'].unique():
-        s_em = df_em[df_em['Pole']==pole].set_index('Day')['Value'].sort_index()
-        freq = (s_em > 0).sum()
-        results.append({'Pole': pole, 'EmergencyFreq': freq})
+    for pole in df_chg['Pole'].unique():
+        s_chg = df_chg[df_chg['Pole']==pole].set_index('Day')['Value'].sort_index()
+        mu, sigma = s_chg.mean(), s_chg.std()
+        peaks = s_chg[s_chg > mu + z_thresh * sigma].index
+        avg_chg_peaks = s_chg.reindex(peaks).mean()
+        overall_avg_chg = s_chg.mean()
+        results.append({'Pole': pole, 'PeakCount': len(peaks), 'AvgChgOnPeaks': avg_chg_peaks, 'OverallAvgChg': overall_avg_chg})
     return pd.DataFrame(results)
-
 # Axe 3 : Analyse unitaire des Standard Changes
 # ------------------------------------------------------------
 # Objectif : Analyser la volumétrie, la dynamique et les pics de Standard Changes pour chaque entité, sans aucun croisement avec les incidents.
@@ -594,7 +535,6 @@ Format attendu :
         )
 
     # AXE 2 : Emergency Changes (analyse statistique pure)
-    from analysis_changes_peaks import compute_change_peaks_analysis
     peak_stats_em = compute_change_peaks_analysis(df_changes_par_type['emergency'])
     prompts_axe['axe2_emergency'] = f"""
 Vous êtes un expert IT analyste. Voici les statistiques de pics et ruptures pour les Emergency Changes :
