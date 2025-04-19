@@ -772,14 +772,20 @@ Format attendu :
         model=model
     )
 
-    # AXE 12 : Piloter la performance opérationnelle sur les incidents P1/P2 via le MTTR (Mean Time To Resolve). Indicateur clé pour la réactivité et la qualité du support.
-    mttr_p1 = compute_mttr(df_mttr_p1)
+    # === AXES 12 à 15 : Calculs et prompts à partir des fonctions métiers ===
+    # 1. Calculs des valeurs MTTR et SLA
+    mttr_p1 = compute_mttr(df_mttr[df_mttr['Priority'] == 'P1'])
+    mttr_p2 = compute_mttr(df_mttr[df_mttr['Priority'] == 'P2'])
+    mttr_p1_sla_breach = compute_mttr(df_mttr[(df_mttr['Priority'] == 'P1') & (df_mttr['SLA_Breach'] == True)])
+    mttr_p2_sla_breach = compute_mttr(df_mttr[(df_mttr['Priority'] == 'P2') & (df_mttr['SLA_Breach'] == True)])
+
+    # 2. Génération des prompts directement avec les variables
     prompts_axe['axe12_mttr_p1'] = f"""
-Vous êtes un expert IT analyste. Voici les statistiques MTTR pour la priorité P1 :
-{mttr_p1.to_string(index=False)}
+Vous êtes un expert IT analyste. MTTR pour la priorité P1 :
+MTTR_P1 = {mttr_p1}
 
 Votre mission :
-- 1. Analysez la tendance du MTTR P1 (moyenne, médiane, p90, p95), détectez toute dérive ou anomalie (date, valeur).
+- 1. Analysez la tendance du MTTR P1, détectez toute dérive ou anomalie (date, valeur).
 - 2. Proposez 2 recommandations pour améliorer le MTTR sur cette priorité.
 - 3. Formatez la synthèse en bullet points, chaque point commençant par [AXE12_P1], avec date et valeur pour chaque événement.
 
@@ -793,14 +799,12 @@ Format attendu :
         model=model
     )
 
-    # Axe 12 : MTTR P2
-    mttr_p2 = compute_mttr(df_mttr_p2)
     prompts_axe['axe12_mttr_p2'] = f"""
-Vous êtes un expert IT analyste. Voici les statistiques MTTR pour la priorité P2 :
-{mttr_p2.to_string(index=False)}
+Vous êtes un expert IT analyste. MTTR pour la priorité P2 :
+MTTR_P2 = {mttr_p2}
 
 Votre mission :
-- 1. Analysez la tendance du MTTR P2 (moyenne, médiane, p90, p95), détectez toute dérive ou anomalie (date, valeur).
+- 1. Analysez la tendance du MTTR P2, détectez toute dérive ou anomalie (date, valeur).
 - 2. Proposez 2 recommandations pour améliorer le MTTR sur cette priorité.
 - 3. Formatez la synthèse en bullet points, chaque point commençant par [AXE12_P2], avec date et valeur pour chaque événement.
 
@@ -814,12 +818,12 @@ Format attendu :
         model=model
     )
 
-    # AXE 13 : Evaluer le respect des engagements contractuels SLA (Service Level Agreement). Permet d’identifier les dérives et d’anticiper les pénalités ou risques contractuels.
-    sla_thresholds = {'P1': 2, 'P2': 4}
-    sla_compliance = compute_sla_compliance(df_mttr, sla_thresholds)
     prompts_axe['axe13_sla_compliance'] = f"""
-Vous êtes un expert IT analyste. Voici les statistiques de conformité SLA :
-{sla_compliance.to_string(index=False)}
+Vous êtes un expert IT analyste. MTTR et conformité SLA pour P1 et P2 :
+MTTR_P1 = {mttr_p1}
+MTTR_P2 = {mttr_p2}
+MTTR_P1_SLA_BREACH = {mttr_p1_sla_breach}
+MTTR_P2_SLA_BREACH = {mttr_p2_sla_breach}
 
 Votre mission :
 - 1. Analysez le respect des SLA, détectez toute dérive ou anomalie (date, valeur).
@@ -838,13 +842,11 @@ Format attendu :
         model=model
     )
 
-    # AXE 14 : Analyse séparée des dépassements SLA pour P1 et P2 (deux dataframes, deux critères)
     for prio in ['P1', 'P2']:
-        df_mttr_prio = df_mttr[df_mttr['Priority'] == prio]
-        sla_breach_stats = compute_sla_breach_stats(df_mttr_prio, {prio: sla_thresholds[prio]})
+        breach_key = f"mttr_{prio.lower()}_sla_breach"
         prompts_axe[f'axe14_sla_breach_{prio}'] = f"""
-Vous êtes un expert IT analyste. Voici les statistiques des breaches SLA pour la priorité {prio} :
-{sla_breach_stats.to_string(index=False)}
+Vous êtes un expert IT analyste. MTTR des incidents hors SLA pour la priorité {prio} :
+MTTR_{prio}_SLA_BREACH = {mttr_p1_sla_breach if prio == 'P1' else mttr_p2_sla_breach}
 
 Votre mission :
 - 1. Analysez les cas de breach SLA, détectez toute anomalie ou tendance (date, valeur).
@@ -863,11 +865,12 @@ Format attendu :
             model=model
         )
 
-    # AXE 15 : Suivre la tendance du MTTR glissant pour détecter des dérives progressives ou des améliorations durables. Permet d’adapter la stratégie d’amélioration continue.
-    mttr_trends = compute_mttr_trends(df_mttr)
     prompts_axe['axe15_mttr_trends'] = f"""
-Vous êtes un expert IT analyste. Voici les statistiques du rolling MTTR :
-{mttr_trends.to_string(index=False)}
+Vous êtes un expert IT analyste. MTTR glissant (rolling) pour P1 et P2 :
+MTTR_P1 = {mttr_p1}
+MTTR_P2 = {mttr_p2}
+MTTR_P1_SLA_BREACH = {mttr_p1_sla_breach}
+MTTR_P2_SLA_BREACH = {mttr_p2_sla_breach}
 
 Votre mission :
 - 1. Analysez les tendances du MTTR glissant, détectez toute anomalie ou rupture (date, valeur).
@@ -922,4 +925,9 @@ Format attendu :
     print("\n=== SYNTHESE GLOBALE LLM ===\n" + syntheses_axe.get('axe_global_synthese', 'Aucune synthèse globale générée.'))
 
 if __name__ == '__main__':
-    main()
+    syntheses_axe = main()
+    print("\n=== SYNTHESE PAR AXE ===")
+    for axe, synth in syntheses_axe.items():
+        if axe != 'axe_global_synthese':
+            print(f"\n--- {axe.upper()} ---\n{synth}")
+    print("\n=== SYNTHESE GLOBALE LLM ===\n" + syntheses_axe.get('axe_global_synthese', 'Aucune synthèse globale générée.'))
