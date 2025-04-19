@@ -418,16 +418,20 @@ def compute_sla_compliance(df: pd.DataFrame) -> pd.DataFrame:
 def compute_sla_breach_stats(df: pd.DataFrame, sla_thresholds: dict) -> pd.DataFrame:
     """
     Stats des résolutions hors SLA: max, p90, p95.
+    df doit contenir ['Pole','day','Value'] où Value = temps de résolution (heures).
     """
     records = []
-    for (pole, prio), grp in df.groupby(['Pole','Priority']):
-        thresh = sla_thresholds.get(prio)
+    for (pole), grp in df.groupby(['Pole']):
+        # Si tu veux garder la notion de priorité, ajoute 'Priority' dans le groupby et adapte sla_thresholds
+        # for (pole, prio), grp in df.groupby(['Pole','Priority']):
+        #     thresh = sla_thresholds.get(prio)
+        thresh = sla_thresholds.get('default', None)  # ou adapte selon ton besoin
         if thresh is None:
             continue
-        breaches = grp.loc[grp['ResolutionTime'] > thresh, 'ResolutionTime']
+        breaches = grp.loc[grp['Value'] > thresh, 'Value']
         if breaches.empty:
             continue
-        records.append({'Pole': pole, 'Priority': prio,
+        records.append({'Pole': pole,
                         'MaxBreach': breaches.max(),
                         'P90Breach': breaches.quantile(0.9),
                         'P95Breach': breaches.quantile(0.95)})
@@ -444,17 +448,17 @@ def compute_sla_breach_stats(df: pd.DataFrame, sla_thresholds: dict) -> pd.DataF
 # ------------------------------------------------------------
 def compute_mttr_trends(df: pd.DataFrame, window: int = 7) -> pd.DataFrame:
     """
-    Rolling MTTR par Priority sur fenêtre de `window` jours.
-    df doit contenir ['Day','Priority','ResolutionTime'].
+    Rolling MTTR par Pole sur fenêtre de `window` jours.
+    df doit contenir ['Pole','day','Value'].
     """
     df2 = df.copy()
-    df2['Date'] = pd.to_datetime(df2['Day']).dt.floor('D')
+    df2['Date'] = pd.to_datetime(df2['day']).dt.floor('D')
     records = []
-    for prio, grp in df2.groupby('Priority'):
-        daily = grp.groupby('Date')['ResolutionTime'].mean()
+    for pole, grp in df2.groupby('Pole'):
+        daily = grp.groupby('Date')['Value'].mean()
         roll = daily.rolling(window).mean().dropna()
         df_roll = roll.reset_index(name=f'RollingMTTR_{window}d')
-        df_roll['Priority'] = prio
+        df_roll['Pole'] = pole
         records.append(df_roll)
     return pd.concat(records, ignore_index=True)
 
