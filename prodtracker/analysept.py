@@ -465,7 +465,14 @@ def compute_mttr_trends(df: pd.DataFrame, window: int = 7) -> pd.DataFrame:
 
 
 
-# === VOLATILITY ===
+# Axe 16 : Volatility (volatilité temporelle)
+# ------------------------------------------------------------
+# Objectif : Suivre la volatilité opérationnelle (rolling std, %Bollinger) pour chaque entité sur une fenêtre glissante.
+# Méthode :
+# - Calcul du rolling std et du %Bollinger sur 20 jours glissants par Pole
+# - Fourniture d'une time series pour analyse dynamique
+# Valeur ajoutée : Permet de détecter les périodes d'instabilité ou de rupture, d'anticiper les risques de dérapage.
+# ------------------------------------------------------------
 def compute_volatility_metrics(df: pd.DataFrame, summary_only: bool = False) -> pd.DataFrame:
     """
     Calcule la volatilité (rolling std) et le %Bollinger sur les valeurs journalières par Pole.
@@ -493,7 +500,14 @@ def compute_volatility_metrics(df: pd.DataFrame, summary_only: bool = False) -> 
         return pd.concat(ts_records, ignore_index=True)
 
 
-# === MOMENTUM ===
+# Axe 17 : Momentum (dynamique opérationnelle)
+# ------------------------------------------------------------
+# Objectif : Suivre la dynamique des incidents/changes via la pente et l'ADX de la MA07 (moyenne mobile 7 jours).
+# Méthode :
+# - Calcul de la pente (slope) et de l'ADX sur une fenêtre glissante de 7 jours par Pole
+# - Fourniture d'une time series pour analyse dynamique
+# Valeur ajoutée : Permet de détecter les accélérations, ralentissements ou ruptures de tendance.
+# ------------------------------------------------------------
 def compute_momentum_metrics(df: pd.DataFrame, summary_only: bool = False) -> pd.DataFrame:
     """
     Calcule la pente (slope) de la MA07 et l'ADX sur la MA07 par Pole.
@@ -522,7 +536,14 @@ def compute_momentum_metrics(df: pd.DataFrame, summary_only: bool = False) -> pd
         return pd.concat(ts_records, ignore_index=True)
 
 
-# === RISK ===
+# Axe 18 : Risk (drawdown cumulatif)
+# ------------------------------------------------------------
+# Objectif : Évaluer le risque opérationnel via le drawdown maximal sur le cumul des valeurs quotidiennes par entité.
+# Méthode :
+# - Calcul du max drawdown sur la série cumulée par Pole
+# - Fourniture d'un résumé global (pas de time series)
+# Valeur ajoutée : Permet d'identifier les entités ayant subi les plus fortes baisses relatives, signe de fragilité potentielle.
+# ------------------------------------------------------------
 def compute_risk_metrics(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calcule le max drawdown sur le cumul journalier par Pole.
@@ -542,7 +563,14 @@ def compute_risk_metrics(df: pd.DataFrame) -> pd.DataFrame:
         })
     return pd.DataFrame(results)
 
-# === SEASONALITY ===
+# Axe 19 : Seasonality (saisonnalité/croissance MoM)
+# ------------------------------------------------------------
+# Objectif : Suivre la croissance ou décroissance mensuelle (MoM) sur le cumul mensuel par entité.
+# Méthode :
+# - Calcul de la croissance MoM pour chaque mois et chaque Pole
+# - Fourniture d'une time series pour analyse saisonnière
+# Valeur ajoutée : Permet d'anticiper les effets saisonniers, de détecter des cycles ou ruptures de croissance.
+# ------------------------------------------------------------
 def compute_seasonality_metrics(df: pd.DataFrame, summary_only: bool = False) -> pd.DataFrame:
     """
     Calcule la croissance mois sur mois sur le cumul mensuel par Pole.
