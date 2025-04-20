@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from scipy.stats import linregress
 from typing import Dict, List
 import os
 import requests  # Tu peux remplacer par httpx si besoin
@@ -463,6 +464,112 @@ def compute_mttr_trends(df: pd.DataFrame, window: int = 7) -> pd.DataFrame:
     return pd.concat(records, ignore_index=True)
 
 
+
+# === VOLATILITY ===
+def compute_volatility_metrics(df: pd.DataFrame, summary_only: bool = False) -> pd.DataFrame:
+    """
+    Calcule la volatilité (rolling std) et le %Bollinger sur les valeurs journalières par Pole.
+    Si summary_only=True, retourne un DataFrame résumé (une ligne par Pole), sinon retourne la time series.
+    """
+    df2 = df.copy()
+    df2['Date'] = pd.to_datetime(df2['day']).dt.floor('D')
+    ts_records = []
+    summary_records = []
+    for pole, grp in df2.groupby('Pole'):
+        grp = grp.sort_values('Date')
+        grp['RollingStd'] = grp['Value'].rolling(20).std()
+        ma20 = grp['Value'].rolling(20).mean()
+        std20 = grp['Value'].rolling(20).std()
+        grp['Bollinger_B'] = (grp['Value'] - ma20) / (2 * std20)
+        ts_records.append(grp[['Date', 'Pole', 'RollingStd', 'Bollinger_B']])
+        summary_records.append({
+            'Pole': pole,
+            'Volatility_std': grp['RollingStd'].mean(skipna=True),
+            'Bollinger_B_mean': grp['Bollinger_B'].mean(skipna=True)
+        })
+    if summary_only:
+        return pd.DataFrame(summary_records)
+    else:
+        return pd.concat(ts_records, ignore_index=True)
+
+
+# === MOMENTUM ===
+def compute_momentum_metrics(df: pd.DataFrame, summary_only: bool = False) -> pd.DataFrame:
+    """
+    Calcule la pente (slope) de la MA07 et l'ADX sur la MA07 par Pole.
+    Si summary_only=True, retourne un DataFrame résumé (une ligne par Pole), sinon retourne la time series (slope/ADX calculés sur fenêtre glissante).
+    """
+    df2 = df.copy()
+    df2['Date'] = pd.to_datetime(df2['day']).dt.floor('D')
+    ts_records = []
+    summary_records = []
+    for pole, grp in df2.groupby('Pole'):
+        grp = grp.sort_values('Date')
+        grp['MA07'] = grp['Value'].rolling(7).mean()
+        # Slope et ADX sur fenêtre glissante (7 derniers points)
+        grp['MA07_slope'] = grp['MA07'].rolling(7).apply(lambda y: linregress(np.arange(len(y)), y).slope if y.notna().all() else np.nan, raw=False)
+        grp['MA07_ADX'] = grp['MA07'].diff().abs().rolling(7).mean()
+        ts_records.append(grp[['Date', 'Pole', 'MA07_slope', 'MA07_ADX']])
+        # Résumé global
+        summary_records.append({
+            'Pole': pole,
+            'MA07_slope': grp['MA07_slope'].mean(skipna=True),
+            'MA07_ADX': grp['MA07_ADX'].mean(skipna=True)
+        })
+    if summary_only:
+        return pd.DataFrame(summary_records)
+    else:
+        return pd.concat(ts_records, ignore_index=True)
+
+
+# === RISK ===
+def compute_risk_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcule le max drawdown sur le cumul journalier par Pole.
+    """
+    df2 = df.copy()
+    df2['Date'] = pd.to_datetime(df2['day']).dt.floor('D')
+    results = []
+    for pole, grp in df2.groupby('Pole'):
+        grp = grp.sort_values('Date')
+        cum = grp['Value'].cumsum()
+        roll_max = cum.cummax()
+        drawdown = (cum - roll_max) / roll_max
+        max_dd = drawdown.min() if len(drawdown) > 0 else np.nan
+        results.append({
+            'Pole': pole,
+            'MaxDrawdown': max_dd
+        })
+    return pd.DataFrame(results)
+
+# === SEASONALITY ===
+def compute_seasonality_metrics(df: pd.DataFrame, summary_only: bool = False) -> pd.DataFrame:
+    """
+    Calcule la croissance mois sur mois sur le cumul mensuel par Pole.
+    Si summary_only=True, retourne un DataFrame résumé (une ligne par Pole), sinon retourne la time series (croissance MoM par mois).
+    """
+    df2 = df.copy()
+    df2['Date'] = pd.to_datetime(df2['day']).dt.floor('D')
+    df2['Month'] = df2['Date'].dt.to_period('M')
+    ts_records = []
+    summary_records = []
+    for pole, grp in df2.groupby('Pole'):
+        monthly = grp.groupby('Month')['Value'].sum().sort_index()
+        mom_growth = monthly.pct_change()
+        # Time series
+        ts = pd.DataFrame({'Pole': pole, 'Month': monthly.index, 'MoM_growth': mom_growth.values})
+        ts_records.append(ts)
+        # Résumé global
+        summary_records.append({
+            'Pole': pole,
+            'MoM_growth_mean': mom_growth.mean(skipna=True)
+        })
+    if summary_only:
+        return pd.DataFrame(summary_records)
+    else:
+        return pd.concat(ts_records, ignore_index=True)
+
+
 def main():
     # --- Chargement des données ---
     # Dans la version finale, tu fourniras directement les DataFrames prêts à l'emploi pour chaque catégorie
@@ -836,7 +943,7 @@ Format attendu :
     )
 
     for prio in ['P1', 'P2']:
-        breach_key = f"mttr_{prio.lower()}_sla_breach"
+        # breach_key supprimé (jamais utilisé)
         prompts_axe[f'axe14_sla_breach_{prio}'] = f"""
 Vous êtes un expert IT analyste. MTTR des incidents hors SLA pour la priorité {prio} :
 MTTR_{prio}_SLA_BREACH = {mttr_p1_sla_breach if prio == 'P1' else mttr_p2_sla_breach}
@@ -882,13 +989,80 @@ Format attendu :
         model=model
     )
 
+    # === AXES 16 à 19 : Métriques avancées ===
+    # Extraction time series pour analyse dynamique par axe
+    df_vol_ts = compute_volatility_metrics(df_metrics)
+    df_mom_ts = compute_momentum_metrics(df_metrics)
+    df_season_ts = compute_seasonality_metrics(df_metrics)
+    # Résumés globaux pour la synthèse globale
+    df_vol_summary = compute_volatility_metrics(df_metrics, summary_only=True)
+    df_mom_summary = compute_momentum_metrics(df_metrics, summary_only=True)
+    df_risk_summary = compute_risk_metrics(df_metrics)  # déjà résumé
+    df_season_summary = compute_seasonality_metrics(df_metrics, summary_only=True)
+
+    prompts_axe['axe16_volatility'] = f'''
+Vous êtes un expert data/ops. Voici la volatilité (rolling std 20j) et %Bollinger par entité et par jour (30 derniers points) :
+{df_vol_ts.tail(30).to_string(index=False)}
+
+Votre mission :
+- Analysez la volatilité, détectez les ruptures, pics ou tendances anormales.
+- Proposez 2 recommandations pour réduire la volatilité opérationnelle.
+- Formatez la synthèse en bullet points, chaque point commençant par [AXE16].
+'''
+    syntheses_axe['axe16_volatility'] = openai_llm_complete(
+        prompt=prompts_axe['axe16_volatility'],
+        model=model
+    )
+
+    prompts_axe['axe17_momentum'] = f'''
+Vous êtes un expert data/ops. Voici la dynamique (pente MA07, ADX) par entité et par jour (30 derniers points) :
+{df_mom_ts.tail(30).to_string(index=False)}
+
+Votre mission :
+- Analysez la dynamique, détectez les accélérations ou ralentissements anormaux.
+- Proposez 2 recommandations pour améliorer la dynamique opérationnelle.
+- Formatez la synthèse en bullet points, chaque point commençant par [AXE17].
+'''
+    syntheses_axe['axe17_momentum'] = openai_llm_complete(
+        prompt=prompts_axe['axe17_momentum'],
+        model=model
+    )
+
+    prompts_axe['axe18_risk'] = f'''
+Vous êtes un expert data/ops. Voici le résumé du risque (max drawdown) par entité :
+{df_risk_summary.to_string(index=False)}
+
+Votre mission :
+- Analysez les risques systémiques (drawdown), identifiez les entités les plus exposées.
+- Proposez 2 recommandations pour limiter les risques opérationnels.
+- Formatez la synthèse en bullet points, chaque point commençant par [AXE18].
+'''
+    syntheses_axe['axe18_risk'] = openai_llm_complete(
+        prompt=prompts_axe['axe18_risk'],
+        model=model
+    )
+
+    prompts_axe['axe19_seasonality'] = f'''
+Vous êtes un expert data/ops. Voici la croissance MoM par entité et par mois (12 derniers points) :
+{df_season_ts.tail(12).to_string(index=False)}
+
+Votre mission :
+- Analysez la saisonnalité, détectez les périodes de croissance ou de décroissance anormale.
+- Proposez 2 recommandations pour mieux anticiper les effets saisonniers.
+- Formatez la synthèse en bullet points, chaque point commençant par [AXE19].
+'''
+    syntheses_axe['axe19_seasonality'] = openai_llm_complete(
+        prompt=prompts_axe['axe19_seasonality'],
+        model=model
+    )
+
     # === AXES GLOBAUX ===
     # Synthèse globale multi-axes (incidents, changes, MTTR, SLA, etc.)
     syntheses_concat = "\n".join([
         f"Synthèse {k} :\n{v}" for k, v in list(syntheses_axe.items()) if k.startswith('axe') and not k.startswith('axe_global')
     ])
     prompts_axe['axe_global_synthese'] = f"""
-Vous êtes un expert IT senior. Voici la synthèse des analyses détaillées sur 15 axes (incidents, changes, MTTR, SLA, corrélations, patterns, etc.) :
+Vous êtes un expert IT senior. Voici la synthèse des analyses détaillées sur 19 axes (incidents, changes, MTTR, SLA, corrélations, patterns, volatilité, momentum, risk, seasonality, etc.) :
 
 {syntheses_concat}
 
