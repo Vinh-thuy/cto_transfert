@@ -5,13 +5,23 @@ from typing import Dict, List
 import os
 import requests  # Tu peux remplacer par httpx si besoin
 
-# Exemple d'appel :
-# response = openai_llm_complete(
-#     prompt="Ton prompt ici",
-#     api_key="TA_CLE_API",
-#     base_url="https://api.openai.com/v1",
-#     model="gpt-3.5-turbo"
-# )
+# =============================================================
+# Exemple d'utilisation du pipeline analytique avec vos DataFrames
+# =============================================================
+# Supposons que vous disposez de deux DataFrames :
+#   - dfmetrixIncident : incidents agrégés par ['Pole', 'day', 'Value']
+#   - dfmetrixChange   : changes agrégés par ['Pole', 'day', 'Value']
+#
+# Exemple d'appel pour la volatilité sur incidents :
+#   df_vol_incidents = compute_volatility_metrics(dfmetrixIncident, summary_only=True)
+# Exemple d'appel pour le momentum sur changes :
+#   df_mom_changes = compute_momentum_metrics(dfmetrixChange, summary_only=True)
+# Exemple d'appel pour la saisonnalité sur incidents :
+#   df_season_incidents = compute_seasonality_metrics(dfmetrixIncident, summary_only=True)
+# =============================================================
+# Vous pouvez ensuite utiliser ces résultats pour générer des prompts LLM.
+# =============================================================
+
 
 def openai_llm_complete(prompt, api_key, base_url="https://api.openai.com/v1", model="gpt-3.5-turbo", http_client=None, **kwargs):
     """
@@ -1017,72 +1027,129 @@ Format attendu :
         model=model
     )
 
-    # === AXES 16 à 19 : Métriques avancées ===
-    # Extraction time series pour analyse dynamique par axe
-    df_vol_ts = compute_volatility_metrics(df_metrics)
-    df_mom_ts = compute_momentum_metrics(df_metrics)
-    df_season_ts = compute_seasonality_metrics(df_metrics)
-    # Résumés globaux pour la synthèse globale
-    df_vol_summary = compute_volatility_metrics(df_metrics, summary_only=True)
-    df_mom_summary = compute_momentum_metrics(df_metrics, summary_only=True)
-    df_risk_summary = compute_risk_metrics(df_metrics)  # déjà résumé
-    df_season_summary = compute_seasonality_metrics(df_metrics, summary_only=True)
+    # === AXES 16 à 19 : Métriques avancées multipériodes ===
+    # Définition des périodes d'analyse
+    periods = [7, 30, 90]
+    # Les DataFrames incidents et changes sont fournis par l'utilisateur :
+    # dfmetrixIncident et dfmetrixChange
+    # Création des dictionnaires de résultats séparés pour chaque nature
+    df_vol_dict_incident, df_vol_dict_change = {}, {}
+    df_mom_dict_incident, df_mom_dict_change = {}, {}
+    df_season_dict_incident, df_season_dict_change = {}, {}
+    for period in periods:
+        # Incidents
+        last_date_inc = pd.to_datetime(dfmetrixIncident['day']).max()
+        min_date_inc = last_date_inc - pd.Timedelta(days=period-1)
+        df_period_inc = dfmetrixIncident[pd.to_datetime(dfmetrixIncident['day']) >= min_date_inc]
+        df_vol_dict_incident[period] = compute_volatility_metrics(df_period_inc)
+        df_mom_dict_incident[period] = compute_momentum_metrics(df_period_inc)
+        df_season_dict_incident[period] = compute_seasonality_metrics(df_period_inc)
+        # Changes
+        last_date_chg = pd.to_datetime(dfmetrixChange['day']).max()
+        min_date_chg = last_date_chg - pd.Timedelta(days=period-1)
+        df_period_chg = dfmetrixChange[pd.to_datetime(dfmetrixChange['day']) >= min_date_chg]
+        df_vol_dict_change[period] = compute_volatility_metrics(df_period_chg)
+        df_mom_dict_change[period] = compute_momentum_metrics(df_period_chg)
+        df_season_dict_change[period] = compute_seasonality_metrics(df_period_chg)
 
-    prompts_axe['axe16_volatility'] = f'''
-Vous êtes un expert data/ops. Voici la volatilité (rolling std 20j) et %Bollinger par entité et par jour (30 derniers points) :
-{df_vol_ts.tail(30).to_string(index=False)}
-
-Votre mission :
-- Analysez la volatilité, détectez les ruptures, pics ou tendances anormales.
-- Proposez 2 recommandations pour réduire la volatilité opérationnelle.
+    # AXE 16 : Volatilité multipériodes incidents/changes
+    for nature, df_dict in [('incidents', df_vol_dict_incident), ('changes', df_vol_dict_change)]:
+        prompt_vol = f"""
+Vous êtes un expert data/ops. Voici la volatilité (rolling std 20j) et %Bollinger par entité sur plusieurs périodes ({nature}) :
+"""
+        for period in periods:
+            prompt_vol += f"\n--- {period} derniers jours ---\n"
+            prompt_vol += df_dict[period].tail(period).to_string(index=False)
+        prompt_vol += """
+\nVotre mission :
+- Comparez la volatilité sur ces trois horizons (7, 30, 90 jours).
+- Détectez toute accélération, rupture ou signal faible, en précisant la période concernée.
+- Proposez 2 recommandations, en précisant si elles s'appliquent au court, moyen ou long terme.
 - Formatez la synthèse en bullet points, chaque point commençant par [AXE16].
-'''
-    syntheses_axe['axe16_volatility'] = openai_llm_complete(
-        prompt=prompts_axe['axe16_volatility'],
-        model=model
-    )
+"""
+        prompts_axe[f'axe16_volatility_{nature}'] = prompt_vol
+        syntheses_axe[f'axe16_volatility_{nature}'] = openai_llm_complete(
+            prompt=prompt_vol,
+            model=model
+        )
 
-    prompts_axe['axe17_momentum'] = f'''
-Vous êtes un expert data/ops. Voici la dynamique (pente MA07, ADX) par entité et par jour (30 derniers points) :
-{df_mom_ts.tail(30).to_string(index=False)}
-
-Votre mission :
-- Analysez la dynamique, détectez les accélérations ou ralentissements anormaux.
-- Proposez 2 recommandations pour améliorer la dynamique opérationnelle.
+    # AXE 17 : Momentum multipériodes incidents/changes
+    for nature, df_dict in [('incidents', df_mom_dict_incident), ('changes', df_mom_dict_change)]:
+        prompt_mom = f"""
+Vous êtes un expert data/ops. Voici la dynamique (pente MA07, ADX) par entité sur plusieurs périodes ({nature}) :
+"""
+        for period in periods:
+            prompt_mom += f"\n--- {period} derniers jours ---\n"
+            prompt_mom += df_dict[period].tail(period).to_string(index=False)
+        prompt_mom += """
+\nVotre mission :
+- Comparez la dynamique sur ces trois horizons (7, 30, 90 jours).
+- Détectez toute accélération, rupture ou signal faible, en précisant la période concernée.
+- Proposez 2 recommandations, en précisant si elles s'appliquent au court, moyen ou long terme.
 - Formatez la synthèse en bullet points, chaque point commençant par [AXE17].
-'''
-    syntheses_axe['axe17_momentum'] = openai_llm_complete(
-        prompt=prompts_axe['axe17_momentum'],
-        model=model
-    )
+"""
+        prompts_axe[f'axe17_momentum_{nature}'] = prompt_mom
+        syntheses_axe[f'axe17_momentum_{nature}'] = openai_llm_complete(
+            prompt=prompt_mom,
+            model=model
+        )
 
-    prompts_axe['axe18_risk'] = f'''
-Vous êtes un expert data/ops. Voici le résumé du risque (max drawdown) par entité :
-{df_risk_summary.to_string(index=False)}
 
-Votre mission :
-- Analysez les risques systémiques (drawdown), identifiez les entités les plus exposées.
-- Proposez 2 recommandations pour limiter les risques opérationnels.
+
+    # Axe 18 : Risque (drawdown) multi-nature et multi-périodes
+    for nature, df_source in [('incidents', dfmetrixIncident), ('changes', dfmetrixChange)]:
+        df_risk_dict = {}
+        for period in periods:
+            last_date = pd.to_datetime(df_source['day']).max()
+            min_date = last_date - pd.Timedelta(days=period-1)
+            df_period = df_source[pd.to_datetime(df_source['day']) >= min_date]
+            df_risk_dict[period] = compute_risk_metrics(df_period)
+        # Construction du prompt multi-périodes
+        prompt_risk = f"""
+Vous êtes un expert data/ops. Voici le résumé du risque (max drawdown) par entité sur plusieurs périodes ({nature}) :
+"""
+        for period in periods:
+            prompt_risk += f"\n--- {period} derniers jours ---\n"
+            prompt_risk += df_risk_dict[period].to_string(index=False)
+        prompt_risk += """
+\nVotre mission :
+- Comparez le risque drawdown sur ces trois horizons (7, 30, 90 jours).
+- Identifiez les entités les plus exposées et les périodes critiques.
+- Proposez 2 recommandations pour limiter les risques opérationnels, en précisant si elles s'appliquent au court, moyen ou long terme.
 - Formatez la synthèse en bullet points, chaque point commençant par [AXE18].
-'''
-    syntheses_axe['axe18_risk'] = openai_llm_complete(
-        prompt=prompts_axe['axe18_risk'],
-        model=model
-    )
+"""
+        prompts_axe[f'axe18_risk_{nature}'] = prompt_risk
+        syntheses_axe[f'axe18_risk_{nature}'] = openai_llm_complete(
+            prompt=prompt_risk,
+            model=model
+        )
 
-    prompts_axe['axe19_seasonality'] = f'''
-Vous êtes un expert data/ops. Voici la croissance MoM par entité et par mois (12 derniers points) :
-{df_season_ts.tail(12).to_string(index=False)}
-
-Votre mission :
-- Analysez la saisonnalité, détectez les périodes de croissance ou de décroissance anormale.
-- Proposez 2 recommandations pour mieux anticiper les effets saisonniers.
+        
+    # AXE 19 : Saisonnalité multipériodes incidents/changes
+    for nature, df_dict in [('incidents', df_season_dict_incident), ('changes', df_season_dict_change)]:
+        prompt_season = f"""
+Vous êtes un expert data/ops. Voici la croissance MoM (saisonnalité) par entité sur plusieurs périodes ({nature}) :
+"""
+        for period in periods:
+            prompt_season += f"\n--- {period} derniers jours ---\n"
+            prompt_season += df_dict[period].tail(min(period, 6)).to_string(index=False)
+        prompt_season += """
+\nVotre mission :
+- Comparez la croissance MoM sur ces trois horizons (7, 30, 90 jours).
+- Détectez toute rupture de saisonnalité ou cycle anormal, en précisant la période concernée.
+- Proposez 2 recommandations, en précisant si elles s'appliquent au court, moyen ou long terme.
 - Formatez la synthèse en bullet points, chaque point commençant par [AXE19].
-'''
-    syntheses_axe['axe19_seasonality'] = openai_llm_complete(
-        prompt=prompts_axe['axe19_seasonality'],
-        model=model
-    )
+"""
+        prompts_axe[f'axe19_seasonality_{nature}'] = prompt_season
+        syntheses_axe[f'axe19_seasonality_{nature}'] = openai_llm_complete(
+            prompt=prompt_season,
+            model=model
+        )
+
+
+
+
+
 
     # === AXES GLOBAUX ===
     # Synthèse globale multi-axes (incidents, changes, MTTR, SLA, etc.)
