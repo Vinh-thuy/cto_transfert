@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 # Charger les variables d'environnement
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_api_key = "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"
+openai_api_key = "sk-proj-zrBQ285cK3jp_kbh2US9C_vtylLMmxWDYJyUmkScYncg8FsRn_lWQHgjsyPicp4XS6JqqT6T3BlbkFJPfvdcrJhjIC7KAIjtUovFiL3sG9fzPD1mmsobN6VWKRFdTCBaqKncRKeblkcC_NODltBp4HqEA"
 print("API Key:", openai_api_key)
 
 
